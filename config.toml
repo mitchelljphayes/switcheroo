@@ -1,0 +1,45 @@
+# keytap configuration
+
+# Kernel-level modifier remaps (applied via hidutil on startup)
+# These persist across app restarts and don't depend on System Settings.
+# Equivalent to System Settings → Keyboard → Modifier Keys, but reliable.
+[[modifier_remap]]
+from = "caps_lock"
+to = "left_ctrl"
+
+# Tap-hold: tap a modifier for one key, hold it for another
+# Tap Ctrl alone (quick press+release) → Escape
+# Hold Ctrl + other key → normal Ctrl behavior
+[[tap_hold]]
+key = "right_ctrl"
+tap = "escape"
+hold = "left_ctrl"
+timeout_ms = 200
+
+# Conditional remaps: when a modifier is held, remap keys
+# These fire on key-down while the modifier is active
+[[conditional_remap]]
+modifier = "ctrl"
+from = "h"
+to = "left_arrow"
+
+[[conditional_remap]]
+modifier = "ctrl"
+from = "j"
+to = "down_arrow"
+
+[[conditional_remap]]
+modifier = "ctrl"
+from = "k"
+to = "up_arrow"
+
+[[conditional_remap]]
+modifier = "ctrl"
+from = "l"
+to = "right_arrow"
+
+# Chords: keys pressed simultaneously within a time window
+[[chord]]
+keys = ["left_shift", "right_shift"]
+emit = "caps_lock"
+window_ms = 200
