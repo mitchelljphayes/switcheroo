@@ -66,7 +66,7 @@ export default function ViewRemaps() {
   async function handleRestart() {
     try {
       restartService();
-      await showToast({ style: Toast.Style.Success, title: "KeyTap restarted" });
+      await showToast({ style: Toast.Style.Success, title: "Rebind restarted" });
     } catch (e) {
       await showToast({ style: Toast.Style.Failure, title: "Failed to restart", message: String(e) });
     }
@@ -114,14 +114,14 @@ export default function ViewRemaps() {
                     <ActionPanel.Section>
                       <Action
                         icon={Icon.ArrowClockwise}
-                        title="Restart KeyTap"
+                        title="Restart Rebind"
                         shortcut={{ modifiers: ["cmd"], key: "r" }}
                         onAction={handleRestart}
                       />
                       <Action.Open
                         icon={Icon.TextDocument}
                         title="Edit Config in Editor"
-                        target={`~/.config/keytap/config.toml`}
+                        target={`~/.config/rebind/config.toml`}
                         shortcut={{ modifiers: ["cmd"], key: "e" }}
                       />
                     </ActionPanel.Section>

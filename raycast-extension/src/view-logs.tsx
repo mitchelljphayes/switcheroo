@@ -40,12 +40,12 @@ export default function ViewLogs() {
           />
           <Action
             icon={Icon.RotateAntiClockwise}
-            title="Restart KeyTap"
+             title="Restart Rebind"
             shortcut={{ modifiers: ["cmd", "shift"], key: "r" }}
             onAction={async () => {
               try {
                 restartService();
-                await showToast({ style: Toast.Style.Success, title: "KeyTap restarted" });
+                await showToast({ style: Toast.Style.Success, title: "Rebind restarted" });
                 setTimeout(reload, 2000);
               } catch (e) {
                 await showToast({ style: Toast.Style.Failure, title: "Failed to restart", message: String(e) });

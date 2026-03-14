@@ -4,11 +4,11 @@ import { restartService } from "./lib/service";
 export default async function Command() {
   try {
     restartService();
-    await showToast({ style: Toast.Style.Success, title: "KeyTap restarted" });
+    await showToast({ style: Toast.Style.Success, title: "Rebind restarted" });
   } catch (e) {
     await showToast({
       style: Toast.Style.Failure,
-      title: "Failed to restart KeyTap",
+      title: "Failed to restart Rebind",
       message: String(e),
     });
   }

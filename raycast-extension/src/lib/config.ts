@@ -3,9 +3,9 @@ import { homedir } from "os";
 import { join } from "path";
 import * as TOML from "smol-toml";
 
-export const CONFIG_PATH = join(homedir(), ".config", "keytap", "config.toml");
-export const LOG_PATH = "/tmp/keytap.err";
-export const PLIST_NAME = "com.local.keytap";
+export const CONFIG_PATH = join(homedir(), ".config", "rebind", "config.toml");
+export const LOG_PATH = "/tmp/rebind.err";
+export const PLIST_NAME = "com.local.rebind";
 
 // --- Raw TOML types (what's in the file) ---
 
@@ -87,7 +87,7 @@ export function readConfig(): RawConfig {
 
 export function writeConfig(config: RawConfig): void {
   // Build TOML string manually to keep it clean and readable
-  const lines: string[] = ["# keytap configuration\n"];
+  const lines: string[] = ["# rebind configuration\n"];
 
   if (config.modifier_remap && config.modifier_remap.length > 0) {
     lines.push("# Kernel-level modifier remaps (applied via hidutil on startup)");

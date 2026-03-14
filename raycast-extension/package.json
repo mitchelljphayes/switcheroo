@@ -1,8 +1,8 @@
 {
   "$schema": "https://www.raycast.com/schemas/extension.json",
-  "name": "keytap",
-  "title": "KeyTap",
-  "description": "Manage KeyTap keyboard remapper configuration",
+  "name": "rebind",
+  "title": "Rebind",
+  "description": "Manage Rebind keyboard remapper configuration",
   "icon": "command-icon.png",
   "author": "mjp",
   "categories": ["System", "Productivity"],
@@ -22,20 +22,20 @@
     },
     {
       "name": "restart",
-      "title": "Restart KeyTap",
-      "description": "Restart the KeyTap service",
+      "title": "Restart Rebind",
+      "description": "Restart the Rebind service",
       "mode": "no-view"
     },
     {
       "name": "view-logs",
       "title": "View Logs",
-      "description": "View recent KeyTap log output",
+      "description": "View recent Rebind log output",
       "mode": "view"
     },
     {
       "name": "edit-config",
       "title": "Edit Config",
-      "description": "Open KeyTap config in your default editor",
+      "description": "Open Rebind config in your default editor",
       "mode": "no-view"
     }
   ],

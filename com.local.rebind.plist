@@ -3,18 +3,18 @@
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.local.keytap</string>
+    <string>com.local.rebind</string>
     <key>ProgramArguments</key>
     <array>
-        <string>/Users/mjp/.local/bin/KeyTap.app/Contents/MacOS/keytap</string>
+        <string>/Users/mjp/.local/bin/Rebind.app/Contents/MacOS/rebind</string>
     </array>
     <key>RunAtLoad</key>
     <true/>
     <key>KeepAlive</key>
     <true/>
     <key>StandardOutPath</key>
-    <string>/tmp/keytap.log</string>
+    <string>/tmp/rebind.log</string>
     <key>StandardErrorPath</key>
-    <string>/tmp/keytap.err</string>
+    <string>/tmp/rebind.err</string>
 </dict>
 </plist>

@@ -1,16 +1,21 @@
-# keytap
+# Rebind
 
 Lightweight macOS keyboard remapper using `CGEventTap`. No kernel extensions, no DriverKit, no Karabiner dependency.
 
 ## What it does
 
-keytap intercepts keyboard events at the Quartz event level and applies remapping rules defined in a TOML config. It handles the stateful remaps that macOS can't do natively (conditional modifier remaps, chords).
+Rebind intercepts keyboard events at the Quartz event level and applies remapping rules defined in a TOML config. It handles the stateful remaps that macOS can't do natively (conditional modifier remaps, tap-hold, chords).
 
-**For simple modifier swaps** (e.g., Caps Lock → Ctrl), use macOS System Settings → Keyboard → Modifier Keys. That's kernel-level and rock solid. keytap handles everything else.
+Rebind also applies kernel-level modifier remaps via `hidutil` on startup, so settings like Caps Lock → Ctrl persist across reboots without depending on System Settings.
 
 ## Default config
 
 ```toml
+# Kernel-level modifier remaps (applied via hidutil on startup)
+[[modifier_remap]]
+from = "caps_lock"
+to = "left_ctrl"
+
 # Ctrl + HJKL → Arrow keys (vim-style navigation everywhere)
 [[conditional_remap]]
 modifier = "ctrl"
@@ -47,29 +52,40 @@ window_ms = 100
 
 This will:
 1. Build the release binary
-2. Install to `/usr/local/bin/keytap`
-3. Copy config to `~/.config/keytap/config.toml`
-4. Install and start a LaunchAgent
+2. Install app bundle to `~/.local/bin/Rebind.app`
+3. Code sign with your local certificate (preserves Accessibility permission across rebuilds)
+4. Copy config to `~/.config/rebind/config.toml`
+5. Install and start a LaunchAgent
 
-**Important**: Grant Accessibility access after installing:
+**Important**: Grant Accessibility access after first install:
 - System Settings → Privacy & Security → Accessibility
-- Add `/usr/local/bin/keytap`
+- Add `~/.local/bin/Rebind.app`
 
 ## Usage
 
 ```bash
 # Run directly (for testing)
-keytap                              # uses ~/.config/keytap/config.toml
-keytap /path/to/config.toml        # explicit config path
+rebind                              # uses ~/.config/rebind/config.toml
+rebind /path/to/config.toml        # explicit config path
 
 # With debug logging
-RUST_LOG=debug keytap
+RUST_LOG=debug rebind
 
 # As a service (managed by install.sh)
-launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.local.keytap.plist
-launchctl bootout gui/$(id -u)/com.local.keytap
-tail -f /tmp/keytap.log
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.local.rebind.plist
+launchctl bootout gui/$(id -u)/com.local.rebind
+tail -f /tmp/rebind.err
 ```
+
+## Raycast Extension
+
+A Raycast extension is included for managing the config via UI:
+
+```bash
+cd raycast-extension && npm install && npm run dev
+```
+
+Commands: View Remaps, Add Remap, Restart Rebind, View Logs, Edit Config.
 
 ## Uninstall
 
@@ -78,6 +94,26 @@ tail -f /tmp/keytap.log
 ```
 
 ## Config reference
+
+### `[[modifier_remap]]`
+
+Kernel-level key remap applied via `hidutil` on startup. Equivalent to System Settings → Keyboard → Modifier Keys, but persistent.
+
+| Field | Values |
+|-------|--------|
+| `from` | Any key name (see below) |
+| `to` | Any key name (see below) |
+
+### `[[tap_hold]]`
+
+Tap a key for one action, hold it for another.
+
+| Field | Description |
+|-------|-------------|
+| `key` | The key to intercept |
+| `tap` | Key to emit on quick press+release |
+| `hold` | Key to emit when held with other keys |
+| `timeout_ms` | Time window in ms (default: 200) |
 
 ### `[[conditional_remap]]`
 
@@ -109,10 +145,11 @@ Function: `f1`-`f12`
 
 ## How it works
 
-1. Registers a `CGEventTap` at `kCGHIDEventTap` (earliest interception point in userspace)
-2. Receives `keyDown`, `keyUp`, and `flagsChanged` events
-3. Runs them through the remap engine
-4. Returns modified events (or suppresses them)
+1. Applies `[[modifier_remap]]` rules via `hidutil` (kernel-level, instant)
+2. Registers a `CGEventTap` at `kCGHIDEventTap` (earliest interception point in userspace)
+3. Receives `keyDown`, `keyUp`, and `flagsChanged` events
+4. Runs them through the remap engine (tap-hold, conditional remaps, chords)
+5. Returns modified events (or suppresses them)
 
 This is the same mechanism used by macOS accessibility tools, screenshot apps, and remote desktop software. It requires Accessibility permission but no special entitlements, kernel extensions, or virtual HID devices.
 
@@ -124,7 +161,7 @@ Both depend on `Karabiner-DriverKit-VirtualHIDDevice`, which:
 - Was broken in macOS 26.4 beta (internal keyboard stopped working)
 - Apple is pushing developers away from DriverKit virtual HID toward CoreHID
 
-keytap uses `CGEventTap`, which has been stable since macOS 10.4 (2005) and is Apple's supported userspace event interception API.
+Rebind uses `CGEventTap`, which has been stable since macOS 10.4 (2005) and is Apple's supported userspace event interception API. For kernel-level modifier remaps, it uses `hidutil`, which has been stable since macOS 10.12.
 
 ## License
 

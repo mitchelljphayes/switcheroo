@@ -1,8 +1,8 @@
 [package]
-name = "keytap"
+name = "rebind"
 version = "0.1.0"
 edition = "2021"
-description = "Lightweight macOS keyboard remapper using CGEventTap"
+description = "Lightweight macOS keyboard remapper using CGEventTap. No kernel extensions, no DriverKit."
 license = "MIT"
 
 [dependencies]

@@ -1,4 +1,4 @@
-# keytap configuration
+# rebind configuration
 
 # Kernel-level modifier remaps (applied via hidutil on startup)
 # These persist across app restarts and don't depend on System Settings.

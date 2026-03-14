@@ -16,8 +16,8 @@ fn find_config() -> PathBuf {
 
     // Check standard locations
     let candidates = [
-        dirs::config_dir().map(|d| d.join("keytap/config.toml")),
-        dirs::home_dir().map(|d| d.join(".config/keytap/config.toml")),
+        dirs::config_dir().map(|d| d.join("rebind/config.toml")),
+        dirs::home_dir().map(|d| d.join(".config/rebind/config.toml")),
     ];
 
     for candidate in candidates.iter().flatten() {

@@ -3,13 +3,13 @@
 <plist version="1.0">
 <dict>
     <key>CFBundleExecutable</key>
-    <string>keytap</string>
+    <string>rebind</string>
     <key>CFBundleIdentifier</key>
-    <string>com.local.keytap</string>
+    <string>com.local.rebind</string>
     <key>CFBundleName</key>
-    <string>KeyTap</string>
+    <string>Rebind</string>
     <key>CFBundleDisplayName</key>
-    <string>KeyTap</string>
+    <string>Rebind</string>
     <key>CFBundleVersion</key>
     <string>0.1.0</string>
     <key>CFBundleShortVersionString</key>
