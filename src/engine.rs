@@ -70,7 +70,12 @@ impl Engine {
         // Any key-down while a tap-hold key is held means it's being used as a hold
         self.mark_tap_holds_as_used(keycode);
 
-        // Check conditional remaps first (e.g., Ctrl+H → Left Arrow)
+        // Check simple remaps first (unconditional key swaps)
+        if let Some(action) = self.check_remaps(keycode) {
+            return action;
+        }
+
+        // Check conditional remaps (e.g., Ctrl+H → Left Arrow)
         if let Some(action) = self.check_conditional_remaps(keycode, &modifiers) {
             return action;
         }
@@ -85,6 +90,11 @@ impl Engine {
 
     /// Process a key-up event.
     pub fn on_key_up(&mut self, keycode: KeyCode, modifiers: Modifiers) -> Action {
+        // Check simple remaps on key-up too
+        if let Some(action) = self.check_remaps(keycode) {
+            return action;
+        }
+
         // If this key-up corresponds to a conditional remap, replace the key-up too
         if let Some(action) = self.check_conditional_remaps_up(keycode, &modifiers) {
             return action;
@@ -172,6 +182,16 @@ impl Engine {
                 state.used_as_hold = true;
             }
         }
+    }
+
+    fn check_remaps(&self, keycode: KeyCode) -> Option<Action> {
+        for remap in &self.config.remaps {
+            if keycode == remap.from {
+                debug!("Remap: {} → {}", remap.from, remap.to);
+                return Some(Action::Replace(remap.to));
+            }
+        }
+        None
     }
 
     fn check_conditional_remaps(&self, keycode: KeyCode, modifiers: &Modifiers) -> Option<Action> {

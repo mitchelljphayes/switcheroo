@@ -16,6 +16,7 @@ import { AddRemapForm } from "./add-remap";
 
 const TYPE_ICONS: Record<RemapType, { icon: Icon; color: Color }> = {
   modifier_remap: { icon: Icon.Hammer, color: Color.Purple },
+  remap: { icon: Icon.Switch, color: Color.Yellow },
   conditional_remap: { icon: Icon.Keyboard, color: Color.Blue },
   tap_hold: { icon: Icon.Clock, color: Color.Orange },
   chord: { icon: Icon.Music, color: Color.Green },
@@ -23,6 +24,7 @@ const TYPE_ICONS: Record<RemapType, { icon: Icon; color: Color }> = {
 
 const TYPE_LABELS: Record<RemapType, string> = {
   modifier_remap: "Modifier Remaps (hidutil)",
+  remap: "Key Swaps",
   conditional_remap: "Conditional Remaps",
   tap_hold: "Tap-Hold",
   chord: "Chords",
@@ -80,7 +82,7 @@ export default function ViewRemaps() {
     grouped.set(item.type, list);
   }
 
-  const sectionOrder: RemapType[] = ["modifier_remap", "tap_hold", "conditional_remap", "chord"];
+  const sectionOrder: RemapType[] = ["modifier_remap", "remap", "tap_hold", "conditional_remap", "chord"];
 
   return (
     <List searchBarPlaceholder="Search remaps...">

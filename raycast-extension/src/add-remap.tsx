@@ -1,10 +1,11 @@
 import { Action, ActionPanel, Form, showToast, Toast, useNavigation } from "@raycast/api";
 import { useState } from "react";
-import { addModifierRemap, addConditionalRemap, addTapHold, addChord, RemapType } from "./lib/config";
+import { addRemap, addModifierRemap, addConditionalRemap, addTapHold, addChord, RemapType } from "./lib/config";
 import { restartService } from "./lib/service";
 import { ALL_KEYS, MODIFIER_KEYS, MODIFIER_NAMES } from "./lib/keys";
 
 const TYPE_OPTIONS: { value: RemapType; title: string }[] = [
+  { value: "remap", title: "Key Swap" },
   { value: "modifier_remap", title: "Modifier Remap (hidutil)" },
   { value: "conditional_remap", title: "Conditional Remap" },
   { value: "tap_hold", title: "Tap-Hold" },
@@ -18,6 +19,9 @@ export function AddRemapForm({ onAdd }: { onAdd?: () => void }) {
   async function handleSubmit(values: Record<string, string | string[]>) {
     try {
       switch (remapType) {
+        case "remap":
+          addRemap(values.from as string, values.to as string);
+          break;
         case "modifier_remap":
           addModifierRemap(values.from as string, values.to as string);
           break;
@@ -65,6 +69,21 @@ export function AddRemapForm({ onAdd }: { onAdd?: () => void }) {
       </Form.Dropdown>
 
       <Form.Separator />
+
+      {remapType === "remap" && (
+        <>
+          <Form.Dropdown id="from" title="From Key">
+            {ALL_KEYS.map((k) => (
+              <Form.Dropdown.Item key={k} value={k} title={k} />
+            ))}
+          </Form.Dropdown>
+          <Form.Dropdown id="to" title="To Key">
+            {ALL_KEYS.map((k) => (
+              <Form.Dropdown.Item key={k} value={k} title={k} />
+            ))}
+          </Form.Dropdown>
+        </>
+      )}
 
       {remapType === "modifier_remap" && (
         <>

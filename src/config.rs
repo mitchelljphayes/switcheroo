@@ -8,6 +8,8 @@ pub struct RawConfig {
     #[serde(default)]
     pub modifier_remap: Vec<RawModifierRemap>,
     #[serde(default)]
+    pub remap: Vec<RawRemap>,
+    #[serde(default)]
     pub tap_hold: Vec<RawTapHold>,
     #[serde(default)]
     pub conditional_remap: Vec<RawConditionalRemap>,
@@ -17,6 +19,12 @@ pub struct RawConfig {
 
 #[derive(Debug, Deserialize)]
 pub struct RawModifierRemap {
+    pub from: String,
+    pub to: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct RawRemap {
     pub from: String,
     pub to: String,
 }
@@ -57,6 +65,7 @@ fn default_chord_window() -> u64 {
 #[derive(Debug)]
 pub struct Config {
     pub modifier_remaps: Vec<ModifierRemap>,
+    pub remaps: Vec<Remap>,
     pub tap_holds: Vec<TapHold>,
     pub conditional_remaps: Vec<ConditionalRemap>,
     pub chords: Vec<Chord>,
@@ -68,6 +77,12 @@ pub struct ModifierRemap {
     pub from_hid: u64,
     pub to: String,
     pub to_hid: u64,
+}
+
+#[derive(Debug)]
+pub struct Remap {
+    pub from: KeyCode,
+    pub to: KeyCode,
 }
 
 #[derive(Debug)]
@@ -127,6 +142,18 @@ impl Config {
             })
             .collect::<Result<Vec<_>, String>>()?;
 
+        let remaps = raw
+            .remap
+            .into_iter()
+            .map(|r| {
+                let from = keycode::parse_key(&r.from)
+                    .ok_or_else(|| format!("Unknown key for remap: {}", r.from))?;
+                let to = keycode::parse_key(&r.to)
+                    .ok_or_else(|| format!("Unknown key for remap: {}", r.to))?;
+                Ok(Remap { from, to })
+            })
+            .collect::<Result<Vec<_>, String>>()?;
+
         let tap_holds = raw
             .tap_hold
             .into_iter()
@@ -180,6 +207,7 @@ impl Config {
 
         Ok(Config {
             modifier_remaps,
+            remaps,
             tap_holds,
             conditional_remaps,
             chords,

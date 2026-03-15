@@ -14,6 +14,11 @@ export interface RawModifierRemap {
   to: string;
 }
 
+export interface RawRemap {
+  from: string;
+  to: string;
+}
+
 export interface RawConditionalRemap {
   modifier: string;
   from: string;
@@ -35,6 +40,7 @@ export interface RawChord {
 
 export interface RawConfig {
   modifier_remap?: RawModifierRemap[];
+  remap?: RawRemap[];
   conditional_remap?: RawConditionalRemap[];
   tap_hold?: RawTapHold[];
   chord?: RawChord[];
@@ -42,20 +48,27 @@ export interface RawConfig {
 
 // --- Parsed config with IDs for list management ---
 
-export type RemapType = "modifier_remap" | "conditional_remap" | "tap_hold" | "chord";
+export type RemapType = "modifier_remap" | "remap" | "conditional_remap" | "tap_hold" | "chord";
 
 export interface RemapItem {
   id: string;
   type: RemapType;
   title: string;
   subtitle: string;
-  raw: RawModifierRemap | RawConditionalRemap | RawTapHold | RawChord;
+  raw: RawModifierRemap | RawRemap | RawConditionalRemap | RawTapHold | RawChord;
 }
 
 function formatModifierRemap(r: RawModifierRemap): { title: string; subtitle: string } {
   return {
     title: `${r.from} → ${r.to}`,
     subtitle: "Modifier Remap (hidutil)",
+  };
+}
+
+function formatRemap(r: RawRemap): { title: string; subtitle: string } {
+  return {
+    title: `${r.from} → ${r.to}`,
+    subtitle: "Key Swap",
   };
 }
 
@@ -93,6 +106,16 @@ export function writeConfig(config: RawConfig): void {
     lines.push("# Kernel-level modifier remaps (applied via hidutil on startup)");
     for (const r of config.modifier_remap) {
       lines.push("[[modifier_remap]]");
+      lines.push(`from = "${r.from}"`);
+      lines.push(`to = "${r.to}"`);
+      lines.push("");
+    }
+  }
+
+  if (config.remap && config.remap.length > 0) {
+    lines.push("# Simple key swaps (unconditional)");
+    for (const r of config.remap) {
+      lines.push("[[remap]]");
       lines.push(`from = "${r.from}"`);
       lines.push(`to = "${r.to}"`);
       lines.push("");
@@ -145,6 +168,11 @@ export function getRemapItems(): RemapItem[] {
     items.push({ id: `modifier_remap:${i}`, type: "modifier_remap", ...fmt, raw: r });
   });
 
+  (config.remap ?? []).forEach((r, i) => {
+    const fmt = formatRemap(r);
+    items.push({ id: `remap:${i}`, type: "remap", ...fmt, raw: r });
+  });
+
   (config.tap_hold ?? []).forEach((r, i) => {
     const fmt = formatTapHold(r);
     items.push({ id: `tap_hold:${i}`, type: "tap_hold", ...fmt, raw: r });
@@ -174,6 +202,13 @@ export function deleteRemap(id: string): void {
     arr.splice(index, 1);
   }
 
+  writeConfig(config);
+}
+
+export function addRemap(from: string, to: string): void {
+  const config = readConfig();
+  if (!config.remap) config.remap = [];
+  config.remap.push({ from, to });
   writeConfig(config);
 }
 

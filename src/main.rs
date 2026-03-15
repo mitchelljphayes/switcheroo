@@ -47,6 +47,7 @@ fn main() {
     };
 
     info!("Loaded {} modifier remaps", config.modifier_remaps.len());
+    info!("Loaded {} remaps", config.remaps.len());
     info!("Loaded {} tap-holds", config.tap_holds.len());
     info!(
         "Loaded {} conditional remaps",
