@@ -1,12 +1,12 @@
-# Rebind
+# Switcheroo 🦘
 
 Lightweight macOS keyboard remapper using `CGEventTap`. No kernel extensions, no DriverKit, no Karabiner dependency.
 
 ## What it does
 
-Rebind intercepts keyboard events at the Quartz event level and applies remapping rules defined in a TOML config. It handles the stateful remaps that macOS can't do natively (conditional modifier remaps, tap-hold, chords).
+Switcheroo intercepts keyboard events at the Quartz event level and applies remapping rules defined in a TOML config. It handles the stateful remaps that macOS can't do natively (conditional modifier remaps, tap-hold, chords).
 
-Rebind also applies kernel-level modifier remaps via `hidutil` on startup, so settings like Caps Lock → Ctrl persist across reboots without depending on System Settings.
+Switcheroo also applies kernel-level modifier remaps via `hidutil` on startup, so settings like Caps Lock → Ctrl persist across reboots without depending on System Settings.
 
 ## Default config
 
@@ -52,29 +52,29 @@ window_ms = 100
 
 This will:
 1. Build the release binary
-2. Install app bundle to `~/.local/bin/Rebind.app`
+2. Install app bundle to `~/.local/bin/Switcheroo.app`
 3. Code sign with your local certificate (preserves Accessibility permission across rebuilds)
-4. Copy config to `~/.config/rebind/config.toml`
+4. Copy config to `~/.config/switcheroo/config.toml`
 5. Install and start a LaunchAgent
 
 **Important**: Grant Accessibility access after first install:
 - System Settings → Privacy & Security → Accessibility
-- Add `~/.local/bin/Rebind.app`
+- Add `~/.local/bin/Switcheroo.app`
 
 ## Usage
 
 ```bash
 # Run directly (for testing)
-rebind                              # uses ~/.config/rebind/config.toml
-rebind /path/to/config.toml        # explicit config path
+switcheroo                              # uses ~/.config/switcheroo/config.toml
+switcheroo /path/to/config.toml        # explicit config path
 
 # With debug logging
-RUST_LOG=debug rebind
+RUST_LOG=debug switcheroo
 
 # As a service (managed by install.sh)
-launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.local.rebind.plist
-launchctl bootout gui/$(id -u)/com.local.rebind
-tail -f /tmp/rebind.err
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.local.switcheroo.plist
+launchctl bootout gui/$(id -u)/com.local.switcheroo
+tail -f /tmp/switcheroo.err
 ```
 
 ## Raycast Extension
@@ -85,7 +85,7 @@ A Raycast extension is included for managing the config via UI:
 cd raycast-extension && npm install && npm run dev
 ```
 
-Commands: View Remaps, Add Remap, Restart Rebind, View Logs, Edit Config.
+Commands: View Remaps, Add Remap, Restart Switcheroo, View Logs, Edit Config.
 
 ## Uninstall
 
@@ -161,7 +161,7 @@ Both depend on `Karabiner-DriverKit-VirtualHIDDevice`, which:
 - Was broken in macOS 26.4 beta (internal keyboard stopped working)
 - Apple is pushing developers away from DriverKit virtual HID toward CoreHID
 
-Rebind uses `CGEventTap`, which has been stable since macOS 10.4 (2005) and is Apple's supported userspace event interception API. For kernel-level modifier remaps, it uses `hidutil`, which has been stable since macOS 10.12.
+Switcheroo uses `CGEventTap`, which has been stable since macOS 10.4 (2005) and is Apple's supported userspace event interception API. For kernel-level modifier remaps, it uses `hidutil`, which has been stable since macOS 10.12.
 
 ## License
 

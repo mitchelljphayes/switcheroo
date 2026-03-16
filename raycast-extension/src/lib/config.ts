@@ -3,9 +3,9 @@ import { homedir } from "os";
 import { join } from "path";
 import * as TOML from "smol-toml";
 
-export const CONFIG_PATH = join(homedir(), ".config", "rebind", "config.toml");
-export const LOG_PATH = "/tmp/rebind.err";
-export const PLIST_NAME = "com.local.rebind";
+export const CONFIG_PATH = join(homedir(), ".config", "switcheroo", "config.toml");
+export const LOG_PATH = "/tmp/switcheroo.err";
+export const PLIST_NAME = "com.local.switcheroo";
 
 // --- Raw TOML types (what's in the file) ---
 
@@ -100,7 +100,7 @@ export function readConfig(): RawConfig {
 
 export function writeConfig(config: RawConfig): void {
   // Build TOML string manually to keep it clean and readable
-  const lines: string[] = ["# rebind configuration\n"];
+  const lines: string[] = ["# switcheroo configuration\n"];
 
   if (config.modifier_remap && config.modifier_remap.length > 0) {
     lines.push("# Kernel-level modifier remaps (applied via hidutil on startup)");
@@ -237,5 +237,20 @@ export function addChord(keys: string[], emit: string, window_ms: number): void 
   const config = readConfig();
   if (!config.chord) config.chord = [];
   config.chord.push({ keys, emit, window_ms });
+  writeConfig(config);
+}
+
+export function updateRemap(id: string, data: Record<string, unknown>): void {
+  const [type, indexStr] = id.split(":");
+  const index = parseInt(indexStr, 10);
+  const config = readConfig();
+
+  const key = type as keyof RawConfig;
+  const arr = config[key] as unknown[];
+  if (!arr || index < 0 || index >= arr.length) {
+    throw new Error(`Remap not found: ${id}`);
+  }
+
+  arr[index] = data;
   writeConfig(config);
 }

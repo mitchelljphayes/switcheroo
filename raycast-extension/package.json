@@ -1,8 +1,8 @@
 {
   "$schema": "https://www.raycast.com/schemas/extension.json",
-  "name": "rebind",
-  "title": "Rebind",
-  "description": "Manage Rebind keyboard remapper configuration",
+  "name": "switcheroo",
+  "title": "Switcheroo",
+  "description": "Manage Switcheroo keyboard remapper configuration",
   "icon": "command-icon.png",
   "author": "mjp",
   "categories": ["System", "Productivity"],
@@ -22,20 +22,20 @@
     },
     {
       "name": "restart",
-      "title": "Restart Rebind",
-      "description": "Restart the Rebind service",
+      "title": "Restart Switcheroo",
+      "description": "Restart the Switcheroo service",
       "mode": "no-view"
     },
     {
       "name": "view-logs",
       "title": "View Logs",
-      "description": "View recent Rebind log output",
+      "description": "View recent Switcheroo log output",
       "mode": "view"
     },
     {
       "name": "edit-config",
       "title": "Edit Config",
-      "description": "Open Rebind config in your default editor",
+      "description": "Open Switcheroo config in your default editor",
       "mode": "no-view"
     }
   ],

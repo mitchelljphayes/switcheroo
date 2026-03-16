@@ -3,13 +3,13 @@
 <plist version="1.0">
 <dict>
     <key>CFBundleExecutable</key>
-    <string>rebind</string>
+    <string>switcheroo</string>
     <key>CFBundleIdentifier</key>
-    <string>com.local.rebind</string>
+    <string>com.local.switcheroo</string>
     <key>CFBundleName</key>
-    <string>Rebind</string>
+    <string>Switcheroo</string>
     <key>CFBundleDisplayName</key>
-    <string>Rebind</string>
+    <string>Switcheroo</string>
     <key>CFBundleVersion</key>
     <string>0.1.0</string>
     <key>CFBundleShortVersionString</key>
