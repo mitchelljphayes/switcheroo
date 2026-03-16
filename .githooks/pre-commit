@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+
+# Prevent direct commits to protected branches (main, master)
+branch="$(git rev-parse --abbrev-ref HEAD)"
+
+protected_branches=("main" "master")
+
+for protected in "${protected_branches[@]}"; do
+  if [ "$branch" = "$protected" ]; then
+    echo ""
+    echo "  COMMIT BLOCKED: You cannot commit directly to '$branch'."
+    echo ""
+    echo "  Create a feature branch instead:"
+    echo "    git switch --no-track -c <branch-name> origin/main"
+    echo ""
+    exit 1
+  fi
+done
