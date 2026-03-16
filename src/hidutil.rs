@@ -1,6 +1,6 @@
 //! Apply keyboard remaps via `hidutil property --set`.
 //!
-//! This sets UserKeyMapping at the HID (kernel) level, which is the same
+//! This sets `UserKeyMapping` at the HID (kernel) level, which is the same
 //! mechanism as System Settings → Keyboard → Modifier Keys, but persists
 //! across reboots when applied on startup.
 
@@ -8,10 +8,10 @@ use crate::config::ModifierRemap;
 use log::info;
 use std::process::Command;
 
-/// Apply modifier remaps using hidutil. This sets the UserKeyMapping property
-/// which remaps keys at the HID driver level (before CGEventTap sees them).
+/// Apply modifier remaps using hidutil. This sets the `UserKeyMapping` property
+/// which remaps keys at the HID driver level (before `CGEventTap` sees them).
 ///
-/// If no remaps are configured, clears any existing UserKeyMapping.
+/// If no remaps are configured, clears any existing `UserKeyMapping`.
 pub fn apply_modifier_remaps(remaps: &[ModifierRemap]) -> Result<(), String> {
     if remaps.is_empty() {
         return Ok(());

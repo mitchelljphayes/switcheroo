@@ -1,4 +1,4 @@
-/// macOS CGEvent keycodes (from Events.h / Carbon HIToolbox)
+/// macOS `CGEvent` keycodes (from `Events.h` / Carbon `HIToolbox`)
 /// These map to the physical key positions on the keyboard.
 use std::fmt;
 
@@ -136,11 +136,11 @@ impl fmt::Display for KeyCode {
             Self::F12 => "f12",
             _ => return write!(f, "0x{:02X}", self.0),
         };
-        write!(f, "{}", name)
+        write!(f, "{name}")
     }
 }
 
-/// Parse a key name from the TOML config into a KeyCode
+/// Parse a key name from the TOML config into a `KeyCode`
 pub fn parse_key(name: &str) -> Option<KeyCode> {
     match name.to_lowercase().as_str() {
         "a" => Some(KeyCode::A),
@@ -205,11 +205,11 @@ pub fn parse_key(name: &str) -> Option<KeyCode> {
 }
 
 /// Map a key name to its USB HID Usage ID (page 0x07).
-/// These are the values used by `hidutil property --set` for UserKeyMapping.
+/// These are the values used by `hidutil property --set` for `UserKeyMapping`.
 /// Reference: USB HID Usage Tables, Section 10 (Keyboard/Keypad Page)
 pub fn hid_usage_id(name: &str) -> Option<u64> {
     // HID usage IDs are prefixed with 0x700000000 for the keyboard/keypad page
-    let base: u64 = 0x700000000;
+    let base: u64 = 0x0007_0000_0000;
     let id: u64 = match name.to_lowercase().as_str() {
         "a" => 0x04,
         "b" => 0x05,
@@ -426,7 +426,7 @@ mod tests {
 
     #[test]
     fn hid_usage_id_known_keys() {
-        let base: u64 = 0x700000000;
+        let base: u64 = 0x0007_0000_0000;
         assert_eq!(hid_usage_id("a"), Some(base | 0x04));
         assert_eq!(hid_usage_id("z"), Some(base | 0x1D));
         assert_eq!(hid_usage_id("escape"), Some(base | 0x29));
@@ -441,7 +441,7 @@ mod tests {
 
     #[test]
     fn hid_usage_id_aliases() {
-        let base: u64 = 0x700000000;
+        let base: u64 = 0x0007_0000_0000;
         assert_eq!(hid_usage_id("esc"), Some(base | 0x29));
         assert_eq!(hid_usage_id("enter"), Some(base | 0x28));
         assert_eq!(hid_usage_id("backspace"), Some(base | 0x2A));
@@ -479,8 +479,9 @@ mod tests {
     }
 }
 
-/// Modifier flags as reported by CGEvent
+/// Modifier flags as reported by `CGEvent`
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(clippy::struct_excessive_bools)] // these are genuine modifier flags, not config options
 pub struct Modifiers {
     pub ctrl: bool,
     pub shift: bool,
@@ -495,7 +496,7 @@ impl Modifiers {
             ctrl: flags & 0x40000 != 0,      // kCGEventFlagMaskControl
             shift: flags & 0x20000 != 0,     // kCGEventFlagMaskShift
             option: flags & 0x80000 != 0,    // kCGEventFlagMaskAlternate
-            cmd: flags & 0x100000 != 0,      // kCGEventFlagMaskCommand
+            cmd: flags & 0x0010_0000 != 0,   // kCGEventFlagMaskCommand
             caps_lock: flags & 0x10000 != 0, // kCGEventFlagMaskAlphaShift
         }
     }

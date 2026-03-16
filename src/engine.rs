@@ -77,7 +77,7 @@ impl Engine {
         }
 
         // Check conditional remaps (e.g., Ctrl+H → Left Arrow)
-        if let Some(action) = self.check_conditional_remaps(keycode, &modifiers) {
+        if let Some(action) = self.check_conditional_remaps(keycode, modifiers) {
             return action;
         }
 
@@ -97,7 +97,7 @@ impl Engine {
         }
 
         // If this key-up corresponds to a conditional remap, replace the key-up too
-        if let Some(action) = self.check_conditional_remaps_up(keycode, &modifiers) {
+        if let Some(action) = self.check_conditional_remaps_up(keycode, modifiers) {
             return action;
         }
 
@@ -106,7 +106,7 @@ impl Engine {
 
     /// Process a flags-changed event (modifier key press/release).
     pub fn on_flags_changed(&mut self, keycode: KeyCode, modifiers: Modifiers) -> Action {
-        let is_press = is_modifier_press(keycode, &modifiers);
+        let is_press = is_modifier_press(keycode, modifiers);
 
         // Check tap-hold (e.g., Ctrl tap → Escape, Ctrl hold → Ctrl)
         if let Some(action) = self.check_tap_hold(keycode, is_press) {
@@ -136,34 +136,34 @@ impl Engine {
 
             if is_press {
                 // Key pressed — start tracking
-                debug!("Tap-hold key pressed: {}", keycode);
+                debug!("Tap-hold key pressed: {keycode}");
                 state.pressed_at = Some(Instant::now());
                 state.used_as_hold = false;
                 // Pass through — let the modifier take effect normally
                 return Some(Action::Pass);
-            } else {
-                // Key released — was it a tap or a hold?
-                let was_tap = if let Some(pressed_at) = state.pressed_at {
-                    let held_duration = pressed_at.elapsed();
-                    let within_timeout = held_duration.as_millis() < th.timeout_ms as u128;
-                    !state.used_as_hold && within_timeout
-                } else {
-                    false
-                };
-
-                state.pressed_at = None;
-                state.used_as_hold = false;
-
-                if was_tap {
-                    debug!("Tap-hold: {} tapped → emitting {}", keycode, th.tap);
-                    // Suppress the modifier key-up and emit the tap key instead
-                    return Some(Action::EmitTap(th.tap));
-                } else {
-                    debug!("Tap-hold: {} used as hold ({})", keycode, th.hold);
-                    // Normal modifier release — pass through
-                    return Some(Action::Pass);
-                }
             }
+
+            // Key released — was it a tap or a hold?
+            let was_tap = if let Some(pressed_at) = state.pressed_at {
+                let held_duration = pressed_at.elapsed();
+                let within_timeout = held_duration.as_millis() < u128::from(th.timeout_ms);
+                !state.used_as_hold && within_timeout
+            } else {
+                false
+            };
+
+            state.pressed_at = None;
+            state.used_as_hold = false;
+
+            if was_tap {
+                debug!("Tap-hold: {keycode} tapped → emitting {}", th.tap);
+                // Suppress the modifier key-up and emit the tap key instead
+                return Some(Action::EmitTap(th.tap));
+            }
+
+            debug!("Tap-hold: {keycode} used as hold ({})", th.hold);
+            // Normal modifier release — pass through
+            return Some(Action::Pass);
         }
         None
     }
@@ -195,7 +195,7 @@ impl Engine {
         None
     }
 
-    fn check_conditional_remaps(&self, keycode: KeyCode, modifiers: &Modifiers) -> Option<Action> {
+    fn check_conditional_remaps(&self, keycode: KeyCode, modifiers: Modifiers) -> Option<Action> {
         for remap in &self.config.conditional_remaps {
             if keycode == remap.from && modifier_active(remap.modifier, modifiers) {
                 debug!(
@@ -213,7 +213,7 @@ impl Engine {
     fn check_conditional_remaps_up(
         &self,
         keycode: KeyCode,
-        modifiers: &Modifiers,
+        modifiers: Modifiers,
     ) -> Option<Action> {
         for remap in &self.config.conditional_remaps {
             if keycode == remap.from && modifier_active(remap.modifier, modifiers) {
@@ -248,16 +248,16 @@ impl Engine {
             }
 
             // Add this key press (avoid duplicates)
-            if !pending.pressed.iter().any(|(k, _)| *k == keycode) {
-                pending.pressed.push((keycode, now));
-            } else {
+            if pending.pressed.iter().any(|(k, _)| *k == keycode) {
                 // Update timestamp for existing key
-                for (k, t) in pending.pressed.iter_mut() {
+                for (k, t) in &mut pending.pressed {
                     if *k == keycode {
                         *t = now;
                         break;
                     }
                 }
+            } else {
+                pending.pressed.push((keycode, now));
             }
 
             debug!(
@@ -535,7 +535,7 @@ mod tests {
     }
 }
 
-fn modifier_active(modifier: Modifier, modifiers: &Modifiers) -> bool {
+fn modifier_active(modifier: Modifier, modifiers: Modifiers) -> bool {
     match modifier {
         Modifier::Ctrl => modifiers.ctrl,
         Modifier::Shift => modifiers.shift,
@@ -554,7 +554,7 @@ fn modifier_name(modifier: Modifier) -> &'static str {
 }
 
 /// Determine if a flagsChanged event represents a press or release.
-fn is_modifier_press(keycode: KeyCode, modifiers: &Modifiers) -> bool {
+fn is_modifier_press(keycode: KeyCode, modifiers: Modifiers) -> bool {
     match keycode {
         KeyCode::LEFT_SHIFT | KeyCode::RIGHT_SHIFT => modifiers.shift,
         KeyCode::LEFT_CTRL | KeyCode::RIGHT_CTRL => modifiers.ctrl,

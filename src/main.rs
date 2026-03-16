@@ -3,6 +3,7 @@ mod engine;
 mod event_tap;
 mod hidutil;
 mod keycode;
+mod macos_ffi;
 
 use log::info;
 use std::path::PathBuf;
@@ -30,6 +31,7 @@ fn find_config() -> PathBuf {
     PathBuf::from("config.toml")
 }
 
+#[allow(clippy::print_stderr)] // main() uses eprintln for fatal errors before/after logger
 fn main() {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
         .format_timestamp_millis()
