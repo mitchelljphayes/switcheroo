@@ -20,7 +20,7 @@ import { ALL_KEYS, MODIFIER_KEYS, MODIFIER_NAMES } from "./lib/keys";
 
 const TYPE_OPTIONS: { value: RemapType; title: string }[] = [
   { value: "remap", title: "Key Swap" },
-  { value: "modifier_remap", title: "Modifier Remap (hidutil)" },
+  { value: "modifier_remap", title: "Modifier Remap" },
   { value: "conditional_remap", title: "Conditional Remap" },
   { value: "tap_hold", title: "Tap-Hold" },
   { value: "chord", title: "Chord" },

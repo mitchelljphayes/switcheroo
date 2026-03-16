@@ -61,7 +61,7 @@ export interface RemapItem {
 function formatModifierRemap(r: RawModifierRemap): { title: string; subtitle: string } {
   return {
     title: `${r.from} → ${r.to}`,
-    subtitle: "Modifier Remap (hidutil)",
+    subtitle: "Modifier Remap",
   };
 }
 
