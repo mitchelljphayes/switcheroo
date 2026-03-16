@@ -124,7 +124,7 @@ impl Config {
         Self::from_raw(raw)
     }
 
-    fn from_raw(raw: RawConfig) -> Result<Self, String> {
+    pub(crate) fn from_raw(raw: RawConfig) -> Result<Self, String> {
         let modifier_remaps = raw
             .modifier_remap
             .into_iter()
@@ -215,12 +215,217 @@ impl Config {
     }
 }
 
-fn parse_modifier(name: &str) -> Result<Modifier, String> {
+pub(crate) fn parse_modifier(name: &str) -> Result<Modifier, String> {
     match name.to_lowercase().as_str() {
         "ctrl" | "control" => Ok(Modifier::Ctrl),
         "shift" => Ok(Modifier::Shift),
         "option" | "alt" => Ok(Modifier::Option),
         "cmd" | "command" => Ok(Modifier::Cmd),
         _ => Err(format!("Unknown modifier: {name}")),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn raw_config(toml: &str) -> RawConfig {
+        toml::from_str(toml).expect("valid TOML")
+    }
+
+    // --- from_raw: valid full config ---
+
+    #[test]
+    fn from_raw_valid_full_config() {
+        let raw = raw_config(
+            r#"
+[[modifier_remap]]
+from = "caps_lock"
+to = "left_ctrl"
+
+[[remap]]
+from = "a"
+to = "b"
+
+[[tap_hold]]
+key = "left_ctrl"
+tap = "escape"
+hold = "left_ctrl"
+timeout_ms = 150
+
+[[conditional_remap]]
+modifier = "ctrl"
+from = "h"
+to = "left_arrow"
+
+[[chord]]
+keys = ["left_shift", "right_shift"]
+emit = "caps_lock"
+window_ms = 80
+"#,
+        );
+
+        let config = Config::from_raw(raw).expect("should parse successfully");
+
+        assert_eq!(config.modifier_remaps.len(), 1);
+        assert_eq!(config.modifier_remaps[0].from, "caps_lock");
+        assert_eq!(config.modifier_remaps[0].to, "left_ctrl");
+
+        assert_eq!(config.remaps.len(), 1);
+        assert_eq!(config.remaps[0].from, KeyCode::A);
+        assert_eq!(config.remaps[0].to, KeyCode::B);
+
+        assert_eq!(config.tap_holds.len(), 1);
+        assert_eq!(config.tap_holds[0].key, KeyCode::LEFT_CTRL);
+        assert_eq!(config.tap_holds[0].tap, KeyCode::ESCAPE);
+        assert_eq!(config.tap_holds[0].hold, KeyCode::LEFT_CTRL);
+        assert_eq!(config.tap_holds[0].timeout_ms, 150);
+
+        assert_eq!(config.conditional_remaps.len(), 1);
+        assert_eq!(config.conditional_remaps[0].modifier, Modifier::Ctrl);
+        assert_eq!(config.conditional_remaps[0].from, KeyCode::H);
+        assert_eq!(config.conditional_remaps[0].to, KeyCode::LEFT_ARROW);
+
+        assert_eq!(config.chords.len(), 1);
+        assert_eq!(
+            config.chords[0].keys,
+            vec![KeyCode::LEFT_SHIFT, KeyCode::RIGHT_SHIFT]
+        );
+        assert_eq!(config.chords[0].emit, KeyCode::CAPS_LOCK);
+        assert_eq!(config.chords[0].window_ms, 80);
+    }
+
+    // --- from_raw: unknown key names ---
+
+    #[test]
+    fn from_raw_unknown_remap_key_returns_error() {
+        let raw = raw_config(
+            r#"
+[[remap]]
+from = "not_a_key"
+to = "a"
+"#,
+        );
+        let result = Config::from_raw(raw);
+        assert!(result.is_err());
+        let msg = result.unwrap_err();
+        assert!(
+            msg.contains("not_a_key"),
+            "error should mention the bad key: {msg}"
+        );
+    }
+
+    #[test]
+    fn from_raw_unknown_remap_to_key_returns_error() {
+        let raw = raw_config(
+            r#"
+[[remap]]
+from = "a"
+to = "also_not_a_key"
+"#,
+        );
+        let result = Config::from_raw(raw);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn from_raw_unknown_modifier_remap_key_returns_error() {
+        let raw = raw_config(
+            r#"
+[[modifier_remap]]
+from = "bad_key"
+to = "left_ctrl"
+"#,
+        );
+        let result = Config::from_raw(raw);
+        assert!(result.is_err());
+    }
+
+    // --- from_raw: unknown modifier name ---
+
+    #[test]
+    fn from_raw_unknown_modifier_name_returns_error() {
+        let raw = raw_config(
+            r#"
+[[conditional_remap]]
+modifier = "super"
+from = "h"
+to = "left_arrow"
+"#,
+        );
+        let result = Config::from_raw(raw);
+        assert!(result.is_err());
+        let msg = result.unwrap_err();
+        assert!(
+            msg.contains("super"),
+            "error should mention the bad modifier: {msg}"
+        );
+    }
+
+    // --- parse_modifier ---
+
+    #[test]
+    fn parse_modifier_all_valid_names() {
+        assert_eq!(parse_modifier("ctrl").unwrap(), Modifier::Ctrl);
+        assert_eq!(parse_modifier("control").unwrap(), Modifier::Ctrl);
+        assert_eq!(parse_modifier("shift").unwrap(), Modifier::Shift);
+        assert_eq!(parse_modifier("option").unwrap(), Modifier::Option);
+        assert_eq!(parse_modifier("alt").unwrap(), Modifier::Option);
+        assert_eq!(parse_modifier("cmd").unwrap(), Modifier::Cmd);
+        assert_eq!(parse_modifier("command").unwrap(), Modifier::Cmd);
+    }
+
+    #[test]
+    fn parse_modifier_case_insensitive() {
+        assert_eq!(parse_modifier("CTRL").unwrap(), Modifier::Ctrl);
+        assert_eq!(parse_modifier("Shift").unwrap(), Modifier::Shift);
+        assert_eq!(parse_modifier("CMD").unwrap(), Modifier::Cmd);
+    }
+
+    #[test]
+    fn parse_modifier_unknown_returns_error() {
+        assert!(parse_modifier("super").is_err());
+        assert!(parse_modifier("meta").is_err());
+        assert!(parse_modifier("").is_err());
+    }
+
+    // --- empty sections ---
+
+    #[test]
+    fn from_raw_empty_config_is_valid() {
+        let raw = raw_config("");
+        let config = Config::from_raw(raw).expect("empty config should be valid");
+        assert!(config.modifier_remaps.is_empty());
+        assert!(config.remaps.is_empty());
+        assert!(config.tap_holds.is_empty());
+        assert!(config.conditional_remaps.is_empty());
+        assert!(config.chords.is_empty());
+    }
+
+    #[test]
+    fn from_raw_default_tap_hold_timeout() {
+        let raw = raw_config(
+            r#"
+[[tap_hold]]
+key = "left_ctrl"
+tap = "escape"
+hold = "left_ctrl"
+"#,
+        );
+        let config = Config::from_raw(raw).unwrap();
+        assert_eq!(config.tap_holds[0].timeout_ms, 200);
+    }
+
+    #[test]
+    fn from_raw_default_chord_window() {
+        let raw = raw_config(
+            r#"
+[[chord]]
+keys = ["a", "b"]
+emit = "c"
+"#,
+        );
+        let config = Config::from_raw(raw).unwrap();
+        assert_eq!(config.chords[0].window_ms, 100);
     }
 }

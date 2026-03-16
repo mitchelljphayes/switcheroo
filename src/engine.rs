@@ -34,6 +34,7 @@ pub enum Action {
     /// Let the original event pass through unmodified
     Pass,
     /// Suppress the original event entirely
+    #[allow(dead_code)]
     Suppress,
     /// Suppress the original and emit a different key (with no modifiers forced)
     Replace(KeyCode),
@@ -282,6 +283,255 @@ impl Engine {
         }
 
         None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::{Chord, ConditionalRemap, Config, Modifier, Remap, TapHold};
+    use crate::keycode::KeyCode;
+
+    fn no_modifiers() -> Modifiers {
+        Modifiers {
+            ctrl: false,
+            shift: false,
+            option: false,
+            cmd: false,
+            caps_lock: false,
+        }
+    }
+
+    fn ctrl_held() -> Modifiers {
+        Modifiers {
+            ctrl: true,
+            ..no_modifiers()
+        }
+    }
+
+    fn empty_config() -> Config {
+        Config {
+            modifier_remaps: vec![],
+            remaps: vec![],
+            tap_holds: vec![],
+            conditional_remaps: vec![],
+            chords: vec![],
+        }
+    }
+
+    // --- Simple remaps ---
+
+    #[test]
+    fn simple_remap_a_to_b_on_key_down() {
+        let config = Config {
+            remaps: vec![Remap {
+                from: KeyCode::A,
+                to: KeyCode::B,
+            }],
+            ..empty_config()
+        };
+        let mut engine = Engine::new(config);
+        let action = engine.on_key_down(KeyCode::A, no_modifiers());
+        assert!(
+            matches!(action, Action::Replace(k) if k == KeyCode::B),
+            "expected Replace(B)"
+        );
+    }
+
+    #[test]
+    fn simple_remap_a_to_b_on_key_up() {
+        let config = Config {
+            remaps: vec![Remap {
+                from: KeyCode::A,
+                to: KeyCode::B,
+            }],
+            ..empty_config()
+        };
+        let mut engine = Engine::new(config);
+        let action = engine.on_key_up(KeyCode::A, no_modifiers());
+        assert!(
+            matches!(action, Action::Replace(k) if k == KeyCode::B),
+            "expected Replace(B) on key-up"
+        );
+    }
+
+    #[test]
+    fn simple_remap_non_mapped_key_passes_through() {
+        let config = Config {
+            remaps: vec![Remap {
+                from: KeyCode::A,
+                to: KeyCode::B,
+            }],
+            ..empty_config()
+        };
+        let mut engine = Engine::new(config);
+        // C is not remapped — should pass through
+        let action = engine.on_key_down(KeyCode::C, no_modifiers());
+        assert!(
+            matches!(action, Action::Pass),
+            "expected Pass for unmapped key"
+        );
+    }
+
+    // --- Conditional remaps ---
+
+    #[test]
+    fn conditional_remap_ctrl_h_to_left_arrow() {
+        let config = Config {
+            conditional_remaps: vec![ConditionalRemap {
+                modifier: Modifier::Ctrl,
+                from: KeyCode::H,
+                to: KeyCode::LEFT_ARROW,
+            }],
+            ..empty_config()
+        };
+        let mut engine = Engine::new(config);
+        let action = engine.on_key_down(KeyCode::H, ctrl_held());
+        assert!(
+            matches!(action, Action::Replace(k) if k == KeyCode::LEFT_ARROW),
+            "expected Replace(LEFT_ARROW)"
+        );
+    }
+
+    #[test]
+    fn conditional_remap_h_without_modifier_passes_through() {
+        let config = Config {
+            conditional_remaps: vec![ConditionalRemap {
+                modifier: Modifier::Ctrl,
+                from: KeyCode::H,
+                to: KeyCode::LEFT_ARROW,
+            }],
+            ..empty_config()
+        };
+        let mut engine = Engine::new(config);
+        let action = engine.on_key_down(KeyCode::H, no_modifiers());
+        assert!(
+            matches!(action, Action::Pass),
+            "H without ctrl should pass through"
+        );
+    }
+
+    // --- Tap-hold ---
+
+    #[test]
+    fn tap_hold_quick_press_and_release_emits_tap_key() {
+        let config = Config {
+            tap_holds: vec![TapHold {
+                key: KeyCode::LEFT_CTRL,
+                tap: KeyCode::ESCAPE,
+                hold: KeyCode::LEFT_CTRL,
+                timeout_ms: 300,
+            }],
+            ..empty_config()
+        };
+        let mut engine = Engine::new(config);
+
+        // Simulate press (flags changed with ctrl active)
+        let press_mods = Modifiers {
+            ctrl: true,
+            ..no_modifiers()
+        };
+        let _ = engine.on_flags_changed(KeyCode::LEFT_CTRL, press_mods);
+
+        // Release quickly — within timeout
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        let release_mods = no_modifiers(); // ctrl no longer held
+        let action = engine.on_flags_changed(KeyCode::LEFT_CTRL, release_mods);
+
+        assert!(
+            matches!(action, Action::EmitTap(k) if k == KeyCode::ESCAPE),
+            "quick tap should emit tap key (Escape)"
+        );
+    }
+
+    #[test]
+    fn tap_hold_key_used_as_hold_when_another_key_pressed() {
+        let config = Config {
+            tap_holds: vec![TapHold {
+                key: KeyCode::LEFT_CTRL,
+                tap: KeyCode::ESCAPE,
+                hold: KeyCode::LEFT_CTRL,
+                timeout_ms: 300,
+            }],
+            ..empty_config()
+        };
+        let mut engine = Engine::new(config);
+
+        // Press the tap-hold key
+        let press_mods = Modifiers {
+            ctrl: true,
+            ..no_modifiers()
+        };
+        let _ = engine.on_flags_changed(KeyCode::LEFT_CTRL, press_mods);
+
+        // Press another key while it is held — marks it as used-as-hold
+        let _ = engine.on_key_down(KeyCode::H, press_mods);
+
+        // Release the tap-hold key — should pass (not emit tap)
+        let release_mods = no_modifiers();
+        let action = engine.on_flags_changed(KeyCode::LEFT_CTRL, release_mods);
+
+        assert!(
+            matches!(action, Action::Pass),
+            "key used as hold should result in Pass on release"
+        );
+    }
+
+    // --- Chords ---
+
+    #[test]
+    fn chord_both_keys_within_window_triggers_emit() {
+        let config = Config {
+            chords: vec![Chord {
+                keys: vec![KeyCode::LEFT_SHIFT, KeyCode::RIGHT_SHIFT],
+                emit: KeyCode::CAPS_LOCK,
+                window_ms: 200,
+            }],
+            ..empty_config()
+        };
+        let mut engine = Engine::new(config);
+
+        // Press first key (flags changed — treat as key_down for chord purposes)
+        let after_first = engine.on_key_down(KeyCode::LEFT_SHIFT, no_modifiers());
+        // First key alone doesn't complete the chord
+        assert!(
+            !matches!(after_first, Action::EmitTap(_)),
+            "single key should not trigger chord"
+        );
+
+        // Press second key quickly within window
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        let after_second = engine.on_key_down(KeyCode::RIGHT_SHIFT, no_modifiers());
+        assert!(
+            matches!(after_second, Action::EmitTap(k) if k == KeyCode::CAPS_LOCK),
+            "both chord keys within window should trigger EmitTap(CAPS_LOCK)"
+        );
+    }
+
+    #[test]
+    fn chord_keys_outside_window_do_not_trigger() {
+        let config = Config {
+            chords: vec![Chord {
+                keys: vec![KeyCode::LEFT_SHIFT, KeyCode::RIGHT_SHIFT],
+                emit: KeyCode::CAPS_LOCK,
+                window_ms: 30,
+            }],
+            ..empty_config()
+        };
+        let mut engine = Engine::new(config);
+
+        // Press first key
+        let _ = engine.on_key_down(KeyCode::LEFT_SHIFT, no_modifiers());
+
+        // Wait longer than the chord window
+        std::thread::sleep(std::time::Duration::from_millis(60));
+
+        // Press second key — first press is now stale
+        let action = engine.on_key_down(KeyCode::RIGHT_SHIFT, no_modifiers());
+        assert!(
+            !matches!(action, Action::EmitTap(_)),
+            "stale chord keys outside window should not trigger"
+        );
     }
 }
 
