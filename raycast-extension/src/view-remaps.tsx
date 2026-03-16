@@ -68,7 +68,7 @@ export default function ViewRemaps() {
   async function handleRestart() {
     try {
       restartService();
-      await showToast({ style: Toast.Style.Success, title: "Rebind restarted" });
+      await showToast({ style: Toast.Style.Success, title: "Switcheroo restarted" });
     } catch (e) {
       await showToast({ style: Toast.Style.Failure, title: "Failed to restart", message: String(e) });
     }
@@ -100,6 +100,11 @@ export default function ViewRemaps() {
                   <ActionPanel>
                     <ActionPanel.Section>
                       <Action.Push
+                        icon={Icon.Pencil}
+                        title="Edit Remap"
+                        target={<AddRemapForm onAdd={reload} editItem={item} />}
+                      />
+                      <Action.Push
                         icon={Icon.Plus}
                         title="Add Remap"
                         shortcut={{ modifiers: ["cmd"], key: "n" }}
@@ -116,14 +121,14 @@ export default function ViewRemaps() {
                     <ActionPanel.Section>
                       <Action
                         icon={Icon.ArrowClockwise}
-                        title="Restart Rebind"
+                        title="Restart Switcheroo"
                         shortcut={{ modifiers: ["cmd"], key: "r" }}
                         onAction={handleRestart}
                       />
                       <Action.Open
                         icon={Icon.TextDocument}
                         title="Edit Config in Editor"
-                        target={`~/.config/rebind/config.toml`}
+                        target={`~/.config/switcheroo/config.toml`}
                         shortcut={{ modifiers: ["cmd"], key: "e" }}
                       />
                     </ActionPanel.Section>

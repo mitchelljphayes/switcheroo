@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-BINARY_NAME="rebind"
-APP_NAME="Rebind.app"
+BINARY_NAME="switcheroo"
+APP_NAME="Switcheroo.app"
 APP_DIR="${HOME}/.local/bin/${APP_NAME}"
-CONFIG_DIR="${HOME}/.config/rebind"
-PLIST_NAME="com.local.rebind"
+CONFIG_DIR="${HOME}/.config/switcheroo"
+PLIST_NAME="com.local.switcheroo"
 PLIST_SRC="$(cd "$(dirname "$0")" && pwd)/${PLIST_NAME}.plist"
 PLIST_DST="${HOME}/Library/LaunchAgents/${PLIST_NAME}.plist"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-SIGNING_IDENTITY="Rebind Dev"
+SIGNING_IDENTITY="Switcheroo Dev"
 
-echo "==> Building rebind (release)..."
+echo "==> Building switcheroo (release)..."
 cargo build --release --manifest-path "${SCRIPT_DIR}/Cargo.toml"
 
 echo "==> Installing app bundle to ${APP_DIR}"
@@ -20,8 +20,8 @@ mkdir -p "${APP_DIR}/Contents/Resources"
 cp "${SCRIPT_DIR}/target/release/${BINARY_NAME}" "${APP_DIR}/Contents/MacOS/${BINARY_NAME}"
 cp "${SCRIPT_DIR}/bundle/Info.plist" "${APP_DIR}/Contents/Info.plist"
 # Generate icon if iconutil is available and iconset exists
-if [ -d "${SCRIPT_DIR}/bundle/Rebind.iconset" ]; then
-    iconutil -c icns "${SCRIPT_DIR}/bundle/Rebind.iconset" -o "${APP_DIR}/Contents/Resources/AppIcon.icns"
+if [ -d "${SCRIPT_DIR}/bundle/Switcheroo.iconset" ]; then
+    iconutil -c icns "${SCRIPT_DIR}/bundle/Switcheroo.iconset" -o "${APP_DIR}/Contents/Resources/AppIcon.icns"
 elif [ -f "${APP_DIR}/Contents/Resources/AppIcon.icns" ]; then
     echo "    Using existing icon"
 fi
@@ -58,11 +58,11 @@ launchctl bootout "gui/$(id -u)/${PLIST_NAME}" 2>/dev/null || true
 
 cp "${PLIST_SRC}" "${PLIST_DST}"
 
-echo "==> Starting rebind"
+echo "==> Starting switcheroo"
 launchctl bootstrap "gui/$(id -u)" "${PLIST_DST}"
 
 echo ""
-echo "Done! Rebind is running."
+echo "Done! Switcheroo is running."
 echo ""
 echo "First install only: Grant Accessibility access:"
 echo "  System Settings → Privacy & Security → Accessibility"
@@ -72,5 +72,5 @@ echo ""
 echo "Commands:"
 echo "  Stop:    launchctl bootout gui/\$(id -u)/${PLIST_NAME}"
 echo "  Start:   launchctl bootstrap gui/\$(id -u) ${PLIST_DST}"
-echo "  Logs:    tail -f /tmp/rebind.err"
+echo "  Logs:    tail -f /tmp/switcheroo.err"
 echo "  Config:  ${CONFIG_DIR}/config.toml"

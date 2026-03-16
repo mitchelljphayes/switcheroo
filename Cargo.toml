@@ -1,5 +1,5 @@
 [package]
-name = "rebind"
+name = "switcheroo"
 version = "0.1.0"
 edition = "2021"
 description = "Lightweight macOS keyboard remapper using CGEventTap. No kernel extensions, no DriverKit."

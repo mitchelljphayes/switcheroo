@@ -1,4 +1,4 @@
-// Key names that rebind understands, grouped by category
+// Key names that switcheroo understands, grouped by category
 
 export const MODIFIER_KEYS = [
   "caps_lock",

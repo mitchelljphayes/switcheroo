@@ -3,18 +3,18 @@
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.local.rebind</string>
+    <string>com.local.switcheroo</string>
     <key>ProgramArguments</key>
     <array>
-        <string>/Users/mjp/.local/bin/Rebind.app/Contents/MacOS/rebind</string>
+        <string>/Users/mjp/.local/bin/Switcheroo.app/Contents/MacOS/switcheroo</string>
     </array>
     <key>RunAtLoad</key>
     <true/>
     <key>KeepAlive</key>
     <true/>
     <key>StandardOutPath</key>
-    <string>/tmp/rebind.log</string>
+    <string>/tmp/switcheroo.log</string>
     <key>StandardErrorPath</key>
-    <string>/tmp/rebind.err</string>
+    <string>/tmp/switcheroo.err</string>
 </dict>
 </plist>

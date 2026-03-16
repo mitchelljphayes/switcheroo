@@ -1,4 +1,4 @@
-# Contributing to Rebind
+# Contributing to Switcheroo
 
 Thanks for your interest in contributing! Here's how to get started.
 
@@ -19,7 +19,7 @@ RUST_LOG=debug cargo run
 cargo build --release
 ```
 
-Rebind requires **Accessibility permission** on macOS to intercept keyboard events. Grant it in System Settings > Privacy & Security > Accessibility.
+Switcheroo requires **Accessibility permission** on macOS to intercept keyboard events. Grant it in System Settings > Privacy & Security > Accessibility.
 
 ## Making Changes
 
@@ -59,7 +59,7 @@ Open a GitHub issue with:
 - macOS version
 - What you expected vs what happened
 - Your config (redact anything personal)
-- Debug logs if possible (`RUST_LOG=debug rebind`)
+- Debug logs if possible (`RUST_LOG=debug switcheroo`)
 
 ## License
 
