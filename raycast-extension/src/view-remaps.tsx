@@ -23,7 +23,7 @@ const TYPE_ICONS: Record<RemapType, { icon: Icon; color: Color }> = {
 };
 
 const TYPE_LABELS: Record<RemapType, string> = {
-  modifier_remap: "Modifier Remaps (hidutil)",
+  modifier_remap: "Modifier Remaps",
   remap: "Key Swaps",
   conditional_remap: "Conditional Remaps",
   tap_hold: "Tap-Hold",
