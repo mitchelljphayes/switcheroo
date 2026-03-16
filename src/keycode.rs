@@ -273,6 +273,212 @@ pub fn hid_usage_id(name: &str) -> Option<u64> {
     Some(base | id)
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // --- parse_key: letters ---
+
+    #[test]
+    fn parse_key_all_letters() {
+        let cases = [
+            ("a", KeyCode::A),
+            ("b", KeyCode::B),
+            ("c", KeyCode::C),
+            ("d", KeyCode::D),
+            ("e", KeyCode::E),
+            ("f", KeyCode::F),
+            ("g", KeyCode::G),
+            ("h", KeyCode::H),
+            ("i", KeyCode::I),
+            ("j", KeyCode::J),
+            ("k", KeyCode::K),
+            ("l", KeyCode::L),
+            ("m", KeyCode::M),
+            ("n", KeyCode::N),
+            ("o", KeyCode::O),
+            ("p", KeyCode::P),
+            ("q", KeyCode::Q),
+            ("r", KeyCode::R),
+            ("s", KeyCode::S),
+            ("t", KeyCode::T),
+            ("u", KeyCode::U),
+            ("v", KeyCode::V),
+            ("w", KeyCode::W),
+            ("x", KeyCode::X),
+            ("y", KeyCode::Y),
+            ("z", KeyCode::Z),
+        ];
+        for (name, expected) in cases {
+            assert_eq!(
+                parse_key(name),
+                Some(expected),
+                "parse_key({name:?}) should be {expected:?}"
+            );
+        }
+    }
+
+    // --- parse_key: modifiers ---
+
+    #[test]
+    fn parse_key_modifiers() {
+        let cases = [
+            ("left_shift", KeyCode::LEFT_SHIFT),
+            ("right_shift", KeyCode::RIGHT_SHIFT),
+            ("left_ctrl", KeyCode::LEFT_CTRL),
+            ("right_ctrl", KeyCode::RIGHT_CTRL),
+            ("left_option", KeyCode::LEFT_OPTION),
+            ("right_option", KeyCode::RIGHT_OPTION),
+            ("left_cmd", KeyCode::LEFT_CMD),
+            ("right_cmd", KeyCode::RIGHT_CMD),
+            ("caps_lock", KeyCode::CAPS_LOCK),
+        ];
+        for (name, expected) in cases {
+            assert_eq!(
+                parse_key(name),
+                Some(expected),
+                "parse_key({name:?}) should be {expected:?}"
+            );
+        }
+    }
+
+    // --- parse_key: aliases ---
+
+    #[test]
+    fn parse_key_alias_esc_to_escape() {
+        assert_eq!(parse_key("esc"), Some(KeyCode::ESCAPE));
+    }
+
+    #[test]
+    fn parse_key_alias_enter_to_return() {
+        assert_eq!(parse_key("enter"), Some(KeyCode::RETURN));
+    }
+
+    #[test]
+    fn parse_key_alias_backspace_to_delete() {
+        assert_eq!(parse_key("backspace"), Some(KeyCode::DELETE));
+    }
+
+    #[test]
+    fn parse_key_alias_lshift_to_left_shift() {
+        assert_eq!(parse_key("lshift"), Some(KeyCode::LEFT_SHIFT));
+    }
+
+    #[test]
+    fn parse_key_alias_rshift_to_right_shift() {
+        assert_eq!(parse_key("rshift"), Some(KeyCode::RIGHT_SHIFT));
+    }
+
+    #[test]
+    fn parse_key_alias_lctrl() {
+        assert_eq!(parse_key("lctrl"), Some(KeyCode::LEFT_CTRL));
+        assert_eq!(parse_key("left_control"), Some(KeyCode::LEFT_CTRL));
+    }
+
+    #[test]
+    fn parse_key_alias_lalt_loption() {
+        assert_eq!(parse_key("lalt"), Some(KeyCode::LEFT_OPTION));
+        assert_eq!(parse_key("left_alt"), Some(KeyCode::LEFT_OPTION));
+        assert_eq!(parse_key("loption"), Some(KeyCode::LEFT_OPTION));
+    }
+
+    #[test]
+    fn parse_key_alias_lcmd() {
+        assert_eq!(parse_key("lcmd"), Some(KeyCode::LEFT_CMD));
+        assert_eq!(parse_key("left_command"), Some(KeyCode::LEFT_CMD));
+    }
+
+    #[test]
+    fn parse_key_alias_caps() {
+        assert_eq!(parse_key("caps"), Some(KeyCode::CAPS_LOCK));
+        assert_eq!(parse_key("capslock"), Some(KeyCode::CAPS_LOCK));
+    }
+
+    #[test]
+    fn parse_key_alias_arrow_shortcuts() {
+        assert_eq!(parse_key("left"), Some(KeyCode::LEFT_ARROW));
+        assert_eq!(parse_key("right"), Some(KeyCode::RIGHT_ARROW));
+        assert_eq!(parse_key("up"), Some(KeyCode::UP_ARROW));
+        assert_eq!(parse_key("down"), Some(KeyCode::DOWN_ARROW));
+    }
+
+    // --- parse_key: unknown ---
+
+    #[test]
+    fn parse_key_unknown_returns_none() {
+        assert_eq!(parse_key("not_a_key"), None);
+        assert_eq!(parse_key(""), None);
+        assert_eq!(parse_key("123"), None);
+    }
+
+    // --- parse_key: case insensitivity ---
+
+    #[test]
+    fn parse_key_case_insensitive() {
+        assert_eq!(parse_key("A"), Some(KeyCode::A));
+        assert_eq!(parse_key("ESC"), Some(KeyCode::ESCAPE));
+        assert_eq!(parse_key("Left_Shift"), Some(KeyCode::LEFT_SHIFT));
+        assert_eq!(parse_key("CAPS_LOCK"), Some(KeyCode::CAPS_LOCK));
+        assert_eq!(parse_key("F1"), Some(KeyCode::F1));
+    }
+
+    // --- hid_usage_id ---
+
+    #[test]
+    fn hid_usage_id_known_keys() {
+        let base: u64 = 0x700000000;
+        assert_eq!(hid_usage_id("a"), Some(base | 0x04));
+        assert_eq!(hid_usage_id("z"), Some(base | 0x1D));
+        assert_eq!(hid_usage_id("escape"), Some(base | 0x29));
+        assert_eq!(hid_usage_id("space"), Some(base | 0x2C));
+        assert_eq!(hid_usage_id("return"), Some(base | 0x28));
+        assert_eq!(hid_usage_id("left_shift"), Some(base | 0xE1));
+        assert_eq!(hid_usage_id("caps_lock"), Some(base | 0x39));
+        assert_eq!(hid_usage_id("left_arrow"), Some(base | 0x50));
+        assert_eq!(hid_usage_id("f1"), Some(base | 0x3A));
+        assert_eq!(hid_usage_id("f12"), Some(base | 0x45));
+    }
+
+    #[test]
+    fn hid_usage_id_aliases() {
+        let base: u64 = 0x700000000;
+        assert_eq!(hid_usage_id("esc"), Some(base | 0x29));
+        assert_eq!(hid_usage_id("enter"), Some(base | 0x28));
+        assert_eq!(hid_usage_id("backspace"), Some(base | 0x2A));
+        assert_eq!(hid_usage_id("lshift"), Some(base | 0xE1));
+    }
+
+    #[test]
+    fn hid_usage_id_unknown_returns_none() {
+        assert_eq!(hid_usage_id("not_a_key"), None);
+        assert_eq!(hid_usage_id(""), None);
+    }
+
+    // --- Display ---
+
+    #[test]
+    fn display_known_keys() {
+        assert_eq!(KeyCode::A.to_string(), "a");
+        assert_eq!(KeyCode::Z.to_string(), "z");
+        assert_eq!(KeyCode::ESCAPE.to_string(), "escape");
+        assert_eq!(KeyCode::RETURN.to_string(), "return");
+        assert_eq!(KeyCode::DELETE.to_string(), "delete");
+        assert_eq!(KeyCode::LEFT_SHIFT.to_string(), "left_shift");
+        assert_eq!(KeyCode::CAPS_LOCK.to_string(), "caps_lock");
+        assert_eq!(KeyCode::LEFT_ARROW.to_string(), "left_arrow");
+        assert_eq!(KeyCode::F1.to_string(), "f1");
+        assert_eq!(KeyCode::F12.to_string(), "f12");
+        assert_eq!(KeyCode::SPACE.to_string(), "space");
+        assert_eq!(KeyCode::TAB.to_string(), "tab");
+    }
+
+    #[test]
+    fn display_unknown_keycode_uses_hex() {
+        // A keycode not in the match table should format as hex
+        assert_eq!(KeyCode(0xFF).to_string(), "0xFF");
+    }
+}
+
 /// Modifier flags as reported by CGEvent
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Modifiers {
