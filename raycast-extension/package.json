@@ -4,7 +4,7 @@
   "title": "Switcheroo",
   "description": "Manage Switcheroo keyboard remapper configuration",
   "icon": "command-icon.png",
-  "author": "mjp",
+  "author": "Mitchell Hayes",
   "categories": ["System", "Productivity"],
   "license": "MIT",
   "commands": [

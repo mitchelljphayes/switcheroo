@@ -15,11 +15,11 @@ import { restartService } from "./lib/service";
 import { AddRemapForm } from "./add-remap";
 
 const TYPE_ICONS: Record<RemapType, { icon: Icon; color: Color }> = {
-  modifier_remap: { icon: Icon.Hammer, color: Color.Purple },
+  modifier_remap: { icon: Icon.Key, color: Color.Purple },
   remap: { icon: Icon.Switch, color: Color.Yellow },
-  conditional_remap: { icon: Icon.Keyboard, color: Color.Blue },
-  tap_hold: { icon: Icon.Clock, color: Color.Orange },
-  chord: { icon: Icon.Music, color: Color.Green },
+  conditional_remap: { icon: Icon.ArrowRight, color: Color.Blue },
+  tap_hold: { icon: Icon.Hourglass, color: Color.Orange },
+  chord: { icon: Icon.Layers, color: Color.Green },
 };
 
 const TYPE_LABELS: Record<RemapType, string> = {
