@@ -10,5 +10,8 @@
 raycast-extension/node_modules/
 raycast-extension/build/
 
+# Editor/tool configs
+opencode.json
+
 # Internal plans
 plans/
