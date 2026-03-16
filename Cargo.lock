@@ -336,20 +336,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "rebind"
-version = "0.1.0"
-dependencies = [
- "core-foundation",
- "core-graphics",
- "dirs",
- "env_logger",
- "log",
- "serde",
- "signal-hook",
- "toml",
-]
-
-[[package]]
 name = "redox_users"
 version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -446,6 +432,20 @@ checksum = "c4db69cba1110affc0e9f7bcd48bbf87b3f4fc7c61fc9155afd4c469eb3d6c1b"
 dependencies = [
  "errno",
  "libc",
+]
+
+[[package]]
+name = "switcheroo"
+version = "0.1.0"
+dependencies = [
+ "core-foundation",
+ "core-graphics",
+ "dirs",
+ "env_logger",
+ "log",
+ "serde",
+ "signal-hook",
+ "toml",
 ]
 
 [[package]]
