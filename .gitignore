@@ -1,2 +1,14 @@
+# Rust
 /target
+**/*.rs.bk
+*.pdb
+
+# macOS
+.DS_Store
+
+# Raycast Extension
 raycast-extension/node_modules/
+raycast-extension/build/
+
+# Docs (internal)
+docs/
