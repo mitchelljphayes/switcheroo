@@ -1,4 +1,4 @@
-use crate::config::{Config, Modifier};
+use crate::config::Config;
 use crate::keycode::{KeyCode, Modifiers};
 use log::debug;
 use std::time::Instant;
@@ -127,12 +127,10 @@ impl Engine {
 
     /// Check and handle tap-hold keys on flagsChanged events.
     fn check_tap_hold(&mut self, keycode: KeyCode, is_press: bool) -> Option<Action> {
-        for (i, th) in self.config.tap_holds.iter().enumerate() {
+        for (th, state) in self.config.tap_holds.iter().zip(&mut self.tap_hold_state) {
             if keycode != th.key {
                 continue;
             }
-
-            let state = &mut self.tap_hold_state[i];
 
             if is_press {
                 // Key pressed — start tracking
@@ -171,8 +169,7 @@ impl Engine {
     /// Mark all currently-held tap-hold keys as "used as hold"
     /// because another key was pressed while they were down.
     fn mark_tap_holds_as_used(&mut self, _trigger_key: KeyCode) {
-        for (i, th) in self.config.tap_holds.iter().enumerate() {
-            let state = &mut self.tap_hold_state[i];
+        for (th, state) in self.config.tap_holds.iter().zip(&mut self.tap_hold_state) {
             if state.pressed_at.is_some() {
                 if !state.used_as_hold {
                     debug!(
@@ -197,12 +194,10 @@ impl Engine {
 
     fn check_conditional_remaps(&self, keycode: KeyCode, modifiers: Modifiers) -> Option<Action> {
         for remap in &self.config.conditional_remaps {
-            if keycode == remap.from && modifier_active(remap.modifier, modifiers) {
+            if keycode == remap.from && modifiers.is_active(remap.modifier) {
                 debug!(
                     "Conditional remap: {} + {} → {}",
-                    modifier_name(remap.modifier),
-                    remap.from,
-                    remap.to
+                    remap.modifier, remap.from, remap.to
                 );
                 return Some(Action::Replace(remap.to));
             }
@@ -216,7 +211,7 @@ impl Engine {
         modifiers: Modifiers,
     ) -> Option<Action> {
         for remap in &self.config.conditional_remaps {
-            if keycode == remap.from && modifier_active(remap.modifier, modifiers) {
+            if keycode == remap.from && modifiers.is_active(remap.modifier) {
                 return Some(Action::Replace(remap.to));
             }
         }
@@ -293,19 +288,13 @@ mod tests {
     use crate::keycode::KeyCode;
 
     fn no_modifiers() -> Modifiers {
-        Modifiers {
-            ctrl: false,
-            shift: false,
-            option: false,
-            cmd: false,
-            caps_lock: false,
-        }
+        Modifiers::default()
     }
 
     fn ctrl_held() -> Modifiers {
         Modifiers {
             ctrl: true,
-            ..no_modifiers()
+            ..Modifiers::default()
         }
     }
 
@@ -532,24 +521,6 @@ mod tests {
             !matches!(action, Action::EmitTap(_)),
             "stale chord keys outside window should not trigger"
         );
-    }
-}
-
-fn modifier_active(modifier: Modifier, modifiers: Modifiers) -> bool {
-    match modifier {
-        Modifier::Ctrl => modifiers.ctrl,
-        Modifier::Shift => modifiers.shift,
-        Modifier::Option => modifiers.option,
-        Modifier::Cmd => modifiers.cmd,
-    }
-}
-
-fn modifier_name(modifier: Modifier) -> &'static str {
-    match modifier {
-        Modifier::Ctrl => "ctrl",
-        Modifier::Shift => "shift",
-        Modifier::Option => "option",
-        Modifier::Cmd => "cmd",
     }
 }
 

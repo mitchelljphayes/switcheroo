@@ -23,16 +23,24 @@ fn post_key_tap(proxy: core_graphics::event::CGEventTapProxy, keycode: KeyCode) 
         return;
     }
 
-    let source = CGEventSource::new(CGEventSourceStateID::Private);
-    if let Ok(source) = source {
-        if let Ok(key_down) = CGEvent::new_keyboard_event(source.clone(), keycode.0, true) {
+    let Ok(source) = CGEventSource::new(CGEventSourceStateID::Private) else {
+        log::error!("Failed to create CGEventSource for synthetic tap");
+        return;
+    };
+
+    match CGEvent::new_keyboard_event(source.clone(), keycode.0, true) {
+        Ok(key_down) => {
             key_down.set_flags(CGEventFlags::empty());
             key_down.post_from_tap(proxy);
         }
-        if let Ok(key_up) = CGEvent::new_keyboard_event(source, keycode.0, false) {
+        Err(()) => log::error!("Failed to create synthetic key-down for {keycode}"),
+    }
+    match CGEvent::new_keyboard_event(source, keycode.0, false) {
+        Ok(key_up) => {
             key_up.set_flags(CGEventFlags::empty());
             key_up.post_from_tap(proxy);
         }
+        Err(()) => log::error!("Failed to create synthetic key-up for {keycode}"),
     }
 }
 

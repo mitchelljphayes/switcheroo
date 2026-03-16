@@ -1,6 +1,6 @@
 use crate::keycode::{self, KeyCode};
 use serde::Deserialize;
-use std::path::PathBuf;
+use std::path::Path;
 
 /// Raw TOML config as deserialized
 #[derive(Debug, Deserialize)]
@@ -108,6 +108,17 @@ pub enum Modifier {
     Cmd,
 }
 
+impl std::fmt::Display for Modifier {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::Ctrl => "ctrl",
+            Self::Shift => "shift",
+            Self::Option => "option",
+            Self::Cmd => "cmd",
+        })
+    }
+}
+
 #[derive(Debug)]
 pub struct Chord {
     pub keys: Vec<KeyCode>,
@@ -116,7 +127,7 @@ pub struct Chord {
 }
 
 impl Config {
-    pub fn load(path: &PathBuf) -> Result<Self, String> {
+    pub fn load(path: &Path) -> Result<Self, String> {
         let content =
             std::fs::read_to_string(path).map_err(|e| format!("Failed to read config: {e}"))?;
         let raw: RawConfig =

@@ -1,6 +1,7 @@
 /// macOS `CGEvent` keycodes (from `Events.h` / Carbon `HIToolbox`)
 /// These map to the physical key positions on the keyboard.
 use std::fmt;
+use std::str::FromStr;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct KeyCode(pub u16);
@@ -140,73 +141,87 @@ impl fmt::Display for KeyCode {
     }
 }
 
-/// Parse a key name from the TOML config into a `KeyCode`
-pub fn parse_key(name: &str) -> Option<KeyCode> {
-    match name.to_lowercase().as_str() {
-        "a" => Some(KeyCode::A),
-        "b" => Some(KeyCode::B),
-        "c" => Some(KeyCode::C),
-        "d" => Some(KeyCode::D),
-        "e" => Some(KeyCode::E),
-        "f" => Some(KeyCode::F),
-        "g" => Some(KeyCode::G),
-        "h" => Some(KeyCode::H),
-        "i" => Some(KeyCode::I),
-        "j" => Some(KeyCode::J),
-        "k" => Some(KeyCode::K),
-        "l" => Some(KeyCode::L),
-        "m" => Some(KeyCode::M),
-        "n" => Some(KeyCode::N),
-        "o" => Some(KeyCode::O),
-        "p" => Some(KeyCode::P),
-        "q" => Some(KeyCode::Q),
-        "r" => Some(KeyCode::R),
-        "s" => Some(KeyCode::S),
-        "t" => Some(KeyCode::T),
-        "u" => Some(KeyCode::U),
-        "v" => Some(KeyCode::V),
-        "w" => Some(KeyCode::W),
-        "x" => Some(KeyCode::X),
-        "y" => Some(KeyCode::Y),
-        "z" => Some(KeyCode::Z),
-        "left_arrow" | "left" => Some(KeyCode::LEFT_ARROW),
-        "right_arrow" | "right" => Some(KeyCode::RIGHT_ARROW),
-        "down_arrow" | "down" => Some(KeyCode::DOWN_ARROW),
-        "up_arrow" | "up" => Some(KeyCode::UP_ARROW),
-        "left_shift" | "lshift" => Some(KeyCode::LEFT_SHIFT),
-        "right_shift" | "rshift" => Some(KeyCode::RIGHT_SHIFT),
-        "left_ctrl" | "lctrl" | "left_control" => Some(KeyCode::LEFT_CTRL),
-        "right_ctrl" | "rctrl" | "right_control" => Some(KeyCode::RIGHT_CTRL),
-        "left_option" | "loption" | "left_alt" | "lalt" => Some(KeyCode::LEFT_OPTION),
-        "right_option" | "roption" | "right_alt" | "ralt" => Some(KeyCode::RIGHT_OPTION),
-        "left_cmd" | "lcmd" | "left_command" => Some(KeyCode::LEFT_CMD),
-        "right_cmd" | "rcmd" | "right_command" => Some(KeyCode::RIGHT_CMD),
-        "caps_lock" | "capslock" | "caps" => Some(KeyCode::CAPS_LOCK),
-        "escape" | "esc" => Some(KeyCode::ESCAPE),
-        "tab" => Some(KeyCode::TAB),
-        "space" => Some(KeyCode::SPACE),
-        "return" | "enter" => Some(KeyCode::RETURN),
-        "delete" | "backspace" => Some(KeyCode::DELETE),
-        "forward_delete" => Some(KeyCode::FORWARD_DELETE),
-        "f1" => Some(KeyCode::F1),
-        "f2" => Some(KeyCode::F2),
-        "f3" => Some(KeyCode::F3),
-        "f4" => Some(KeyCode::F4),
-        "f5" => Some(KeyCode::F5),
-        "f6" => Some(KeyCode::F6),
-        "f7" => Some(KeyCode::F7),
-        "f8" => Some(KeyCode::F8),
-        "f9" => Some(KeyCode::F9),
-        "f10" => Some(KeyCode::F10),
-        "f11" => Some(KeyCode::F11),
-        "f12" => Some(KeyCode::F12),
-        _ => None,
+impl FromStr for KeyCode {
+    type Err = String;
+
+    fn from_str(name: &str) -> Result<Self, Self::Err> {
+        match name.to_lowercase().as_str() {
+            "a" => Ok(Self::A),
+            "b" => Ok(Self::B),
+            "c" => Ok(Self::C),
+            "d" => Ok(Self::D),
+            "e" => Ok(Self::E),
+            "f" => Ok(Self::F),
+            "g" => Ok(Self::G),
+            "h" => Ok(Self::H),
+            "i" => Ok(Self::I),
+            "j" => Ok(Self::J),
+            "k" => Ok(Self::K),
+            "l" => Ok(Self::L),
+            "m" => Ok(Self::M),
+            "n" => Ok(Self::N),
+            "o" => Ok(Self::O),
+            "p" => Ok(Self::P),
+            "q" => Ok(Self::Q),
+            "r" => Ok(Self::R),
+            "s" => Ok(Self::S),
+            "t" => Ok(Self::T),
+            "u" => Ok(Self::U),
+            "v" => Ok(Self::V),
+            "w" => Ok(Self::W),
+            "x" => Ok(Self::X),
+            "y" => Ok(Self::Y),
+            "z" => Ok(Self::Z),
+            "left_arrow" | "left" => Ok(Self::LEFT_ARROW),
+            "right_arrow" | "right" => Ok(Self::RIGHT_ARROW),
+            "down_arrow" | "down" => Ok(Self::DOWN_ARROW),
+            "up_arrow" | "up" => Ok(Self::UP_ARROW),
+            "left_shift" | "lshift" => Ok(Self::LEFT_SHIFT),
+            "right_shift" | "rshift" => Ok(Self::RIGHT_SHIFT),
+            "left_ctrl" | "lctrl" | "left_control" => Ok(Self::LEFT_CTRL),
+            "right_ctrl" | "rctrl" | "right_control" => Ok(Self::RIGHT_CTRL),
+            "left_option" | "loption" | "left_alt" | "lalt" => Ok(Self::LEFT_OPTION),
+            "right_option" | "roption" | "right_alt" | "ralt" => Ok(Self::RIGHT_OPTION),
+            "left_cmd" | "lcmd" | "left_command" => Ok(Self::LEFT_CMD),
+            "right_cmd" | "rcmd" | "right_command" => Ok(Self::RIGHT_CMD),
+            "caps_lock" | "capslock" | "caps" => Ok(Self::CAPS_LOCK),
+            "escape" | "esc" => Ok(Self::ESCAPE),
+            "tab" => Ok(Self::TAB),
+            "space" => Ok(Self::SPACE),
+            "return" | "enter" => Ok(Self::RETURN),
+            "delete" | "backspace" => Ok(Self::DELETE),
+            "forward_delete" => Ok(Self::FORWARD_DELETE),
+            "f1" => Ok(Self::F1),
+            "f2" => Ok(Self::F2),
+            "f3" => Ok(Self::F3),
+            "f4" => Ok(Self::F4),
+            "f5" => Ok(Self::F5),
+            "f6" => Ok(Self::F6),
+            "f7" => Ok(Self::F7),
+            "f8" => Ok(Self::F8),
+            "f9" => Ok(Self::F9),
+            "f10" => Ok(Self::F10),
+            "f11" => Ok(Self::F11),
+            "f12" => Ok(Self::F12),
+            _ => Err(format!("Unknown key: {name}")),
+        }
     }
+}
+
+/// Parse a key name from the TOML config into a `KeyCode`.
+///
+/// Convenience wrapper around `KeyCode::from_str` that returns `Option`.
+pub fn parse_key(name: &str) -> Option<KeyCode> {
+    name.parse().ok()
 }
 
 /// Map a key name to its USB HID Usage ID (page 0x07).
 /// These are the values used by `hidutil property --set` for `UserKeyMapping`.
 /// Reference: USB HID Usage Tables, Section 10 (Keyboard/Keypad Page)
+///
+/// Note: this takes a key *name* (not a `KeyCode`) because HID usage IDs
+/// map to the name-level aliases, and modifier remaps work with names
+/// before they're resolved to `KeyCode` values.
 pub fn hid_usage_id(name: &str) -> Option<u64> {
     // HID usage IDs are prefixed with 0x700000000 for the keyboard/keypad page
     let base: u64 = 0x0007_0000_0000;
@@ -480,7 +495,7 @@ mod tests {
 }
 
 /// Modifier flags as reported by `CGEvent`
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 #[allow(clippy::struct_excessive_bools)] // these are genuine modifier flags, not config options
 pub struct Modifiers {
     pub ctrl: bool,
@@ -498,6 +513,16 @@ impl Modifiers {
             option: flags & 0x80000 != 0,    // kCGEventFlagMaskAlternate
             cmd: flags & 0x0010_0000 != 0,   // kCGEventFlagMaskCommand
             caps_lock: flags & 0x10000 != 0, // kCGEventFlagMaskAlphaShift
+        }
+    }
+
+    /// Check whether a given modifier is currently active.
+    pub fn is_active(self, modifier: crate::config::Modifier) -> bool {
+        match modifier {
+            crate::config::Modifier::Ctrl => self.ctrl,
+            crate::config::Modifier::Shift => self.shift,
+            crate::config::Modifier::Option => self.option,
+            crate::config::Modifier::Cmd => self.cmd,
         }
     }
 }
