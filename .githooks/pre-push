@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+
+# Auto-rebase feature branches onto latest origin/main before pushing.
+# Keeps history linear and avoids merge commits in PRs.
+#
+# How it works:
+#   1. Fetches latest origin/main
+#   2. If behind, rebases your branch onto origin/main
+#   3. Aborts the push (git already resolved the old SHA)
+#   4. You run `git push` again — now with the rebased commits
+#
+# Skips if:
+#   - Pushing to main/master (shouldn't happen anyway)
+#   - Branch is already up to date with origin/main
+
+branch="$(git rev-parse --abbrev-ref HEAD)"
+
+# Don't rebase main/master
+if [ "$branch" = "main" ] || [ "$branch" = "master" ]; then
+  exit 0
+fi
+
+# Fetch latest main
+git fetch origin main --quiet 2>/dev/null
+
+# Check if we're already up to date
+merge_base="$(git merge-base HEAD origin/main)"
+main_head="$(git rev-parse origin/main)"
+
+if [ "$merge_base" = "$main_head" ]; then
+  # Already based on latest main
+  exit 0
+fi
+
+echo ""
+echo "  Branch is behind origin/main. Rebasing..."
+echo ""
+
+if git rebase origin/main --quiet; then
+  echo ""
+  echo "  Rebased '$branch' onto latest origin/main."
+  echo "  Push aborted (git had the old SHA). Run 'git push' again."
+  echo ""
+  exit 1
+else
+  echo ""
+  echo "  REBASE CONFLICT: Push aborted."
+  echo ""
+  echo "  Resolve conflicts, then:"
+  echo "    git rebase --continue"
+  echo "    git push"
+  echo ""
+  git rebase --abort
+  exit 1
+fi
