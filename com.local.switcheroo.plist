@@ -6,7 +6,7 @@
     <string>com.local.switcheroo</string>
     <key>ProgramArguments</key>
     <array>
-        <string>/Users/mjp/.local/bin/Switcheroo.app/Contents/MacOS/switcheroo</string>
+        <string>__APP_DIR__/Contents/MacOS/switcheroo</string>
     </array>
     <key>RunAtLoad</key>
     <true/>

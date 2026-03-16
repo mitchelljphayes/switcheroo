@@ -53,10 +53,11 @@ else
 fi
 
 echo "==> Installing LaunchAgent"
-# Stop existing agent if running
+# Stop existing agent if running (triggers hidutil cleanup via signal handler)
 launchctl bootout "gui/$(id -u)/${PLIST_NAME}" 2>/dev/null || true
 
-cp "${PLIST_SRC}" "${PLIST_DST}"
+# Template the plist with the actual app directory path
+sed "s|__APP_DIR__|${APP_DIR}|g" "${PLIST_SRC}" > "${PLIST_DST}"
 
 echo "==> Starting switcheroo"
 launchctl bootstrap "gui/$(id -u)" "${PLIST_DST}"

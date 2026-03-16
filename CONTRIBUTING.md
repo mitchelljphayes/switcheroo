@@ -25,8 +25,19 @@ Switcheroo requires **Accessibility permission** on macOS to intercept keyboard 
 
 1. Create a branch from `main`
 2. Make your changes
-3. Run `cargo test` and `cargo clippy` before submitting
+3. Run `cargo test` and `cargo clippy` before submitting — **both must pass with zero warnings**
 4. Open a pull request against `main`
+
+### Lint Configuration
+
+The project enforces strict clippy lints configured in `Cargo.toml` under `[lints.clippy]`. Key rules:
+
+- **`unwrap_used`** is denied — use `?`, `expect()`, or proper error handling
+- **`panic`** is denied — no `panic!()` in production code paths
+- **`unsafe_code`** is denied — all unsafe is isolated in `src/macos_ffi.rs`
+- **Pedantic** lints are enabled as warnings
+
+If clippy flags something you believe is a false positive, use a targeted `#[allow(clippy::...)]` with a comment explaining why.
 
 ### Commit Messages
 
