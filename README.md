@@ -16,6 +16,11 @@ Switcheroo also applies kernel-level modifier remaps via `hidutil` on startup, s
 from = "caps_lock"
 to = "left_ctrl"
 
+# Simple key remaps (unconditional, applied via CGEventTap)
+# [[remap]]
+# from = "a"
+# to = "b"
+
 # Ctrl + HJKL → Arrow keys (vim-style navigation everywhere)
 [[conditional_remap]]
 modifier = "ctrl"
@@ -97,12 +102,40 @@ Commands: View Remaps, Add Remap, Restart Switcheroo, View Logs, Edit Config.
 
 ### `[[modifier_remap]]`
 
-Kernel-level key remap applied via `hidutil` on startup. Equivalent to System Settings → Keyboard → Modifier Keys, but persistent.
+Kernel-level key remap applied via `hidutil` on startup. Equivalent to System Settings → Keyboard → Modifier Keys, but persistent. These are applied at the HID driver level (before any event tap sees them) and survive app restarts.
 
 | Field | Values |
 |-------|--------|
 | `from` | Any key name (see below) |
 | `to` | Any key name (see below) |
+
+### `[[remap]]`
+
+Simple unconditional key remap. Every press of `from` becomes `to`, regardless of which modifiers are held. Applied at the `CGEventTap` level (userspace), so these require Switcheroo to be running.
+
+Use this for straightforward key swaps that aren't modifier-specific.
+
+| Field | Values |
+|-------|--------|
+| `from` | Any key name (see below) |
+| `to` | Any key name (see below) |
+
+**Examples:**
+
+```toml
+# Swap semicolon and colon (remap ; to =)
+[[remap]]
+from = "semicolon"
+to = "equal"
+
+# Remap Caps Lock to Escape (alternative to modifier_remap if you
+# want it handled in userspace rather than at the kernel level)
+[[remap]]
+from = "caps_lock"
+to = "escape"
+```
+
+> **`[[remap]]` vs `[[modifier_remap]]`**: Use `modifier_remap` for modifier key swaps (e.g. Caps Lock → Ctrl) — it's applied at the kernel level via `hidutil`, so it works even if Switcheroo isn't running. Use `remap` for everything else, or when you want remaps that can be toggled by stopping/starting Switcheroo.
 
 ### `[[tap_hold]]`
 

@@ -7,6 +7,13 @@
 from = "caps_lock"
 to = "left_ctrl"
 
+# Simple remaps: unconditionally swap one key for another
+# These apply to every keypress regardless of modifiers.
+# Example: swap A and B keys
+# [[remap]]
+# from = "a"
+# to = "b"
+
 # Tap-hold: tap a modifier for one key, hold it for another
 # Tap Ctrl alone (quick press+release) → Escape
 # Hold Ctrl + other key → normal Ctrl behavior
