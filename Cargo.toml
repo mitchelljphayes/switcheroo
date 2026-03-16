@@ -14,3 +14,75 @@ log = "0.4"
 env_logger = "0.11"
 signal-hook = "0.3"
 dirs = "6"
+
+# ── Lint configuration ───────────────────────────────────────────────
+# References:
+#   - EmbarkStudios standard lints: https://github.com/EmbarkStudios/rust-ecosystem/issues/59
+#   - Clippy lint list: https://rust-lang.github.io/rust-clippy/stable/
+#
+# Philosophy: strict for a long-running system daemon. Ban panicking
+# operations, enforce idiomatic patterns, catch common mistakes early.
+# Individual functions can override with #[allow(...)] when justified.
+
+[lints.rust]
+unsafe_code = "deny"                    # only allowed in macos_ffi.rs via #![allow(unsafe_code)]
+rust_2018_idioms = { level = "warn", priority = -1 }
+future_incompatible = { level = "warn", priority = -1 }
+nonstandard_style = { level = "warn", priority = -1 }
+
+[lints.clippy]
+# ── Lint groups (lower priority so individual overrides win) ─────────
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+
+# ── Pedantic overrides (too noisy / not applicable) ──────────────────
+module_name_repetitions = "allow"       # common in Rust, e.g. config::ConfigError
+must_use_candidate = "allow"            # too noisy for application code
+missing_errors_doc = "allow"            # we're a binary, not a library
+missing_panics_doc = "allow"            # ditto
+cast_possible_truncation = "allow"      # CGEvent APIs require casts
+cast_sign_loss = "allow"               # ditto for macOS system APIs
+cast_precision_loss = "allow"          # acceptable for key codes
+
+# ── Panic prevention (critical for a daemon) ─────────────────────────
+unwrap_used = "deny"                    # use expect() or proper error handling
+expect_used = "warn"                    # prefer ? and Result propagation
+panic = "deny"                          # no panic!() in production paths
+unimplemented = "deny"                  # no unimplemented!()
+todo = "warn"                           # flag but don't block during dev
+unreachable = "warn"                    # prefer unreachable!() sparingly
+
+# ── Code quality & correctness ───────────────────────────────────────
+dbg_macro = "deny"                      # no debug prints in production
+print_stdout = "warn"                   # use log macros instead
+print_stderr = "warn"                   # use log macros instead
+enum_glob_use = "warn"                  # prefer explicit enum imports
+wildcard_imports = "warn"               # prefer explicit imports
+redundant_closure_for_method_calls = "warn"
+unnecessary_wraps = "warn"              # don't wrap in Result/Option needlessly
+unused_self = "warn"                    # methods that don't use self
+needless_pass_by_value = "warn"         # take references when possible
+implicit_clone = "warn"                 # prefer explicit .clone()
+inefficient_to_string = "warn"          # use to_string on Display types
+cloned_instead_of_copied = "warn"       # use .copied() for Copy types
+flat_map_option = "warn"               # use .flatten() instead
+manual_ok_or = "warn"                  # use .ok_or() / .ok_or_else()
+
+# ── Safety & robustness ──────────────────────────────────────────────
+# match_on_vec_items — removed in recent clippy, covered by indexing_slicing
+large_stack_arrays = "warn"             # avoid stack overflows
+large_types_passed_by_value = "warn"    # pass large types by reference
+rc_mutex = "warn"                       # usually a design smell
+option_option = "warn"                  # confusing nested Options
+mem_forget = "warn"                     # prefer ManuallyDrop
+exit = "deny"                           # daemon should not call process::exit
+fallible_impl_from = "warn"             # From impls should not panic
+
+# ── String handling ──────────────────────────────────────────────────
+string_add = "warn"                     # prefer format!() or push_str
+string_add_assign = "warn"              # ditto
+# string_to_string — removed in recent clippy, covered by implicit_clone
+string_lit_as_bytes = "warn"           # prefer b"..." byte strings
+
+# ── Documentation ────────────────────────────────────────────────────
+doc_markdown = "warn"                   # catch unlinked code in docs

@@ -3,6 +3,7 @@ mod engine;
 mod event_tap;
 mod hidutil;
 mod keycode;
+mod macos_ffi;
 
 use log::info;
 use std::path::PathBuf;
@@ -30,7 +31,7 @@ fn find_config() -> PathBuf {
     PathBuf::from("config.toml")
 }
 
-fn main() {
+fn run() -> Result<(), String> {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
         .format_timestamp_millis()
         .init();
@@ -38,13 +39,7 @@ fn main() {
     let config_path = find_config();
     info!("Loading config from: {}", config_path.display());
 
-    let config = match config::Config::load(&config_path) {
-        Ok(c) => c,
-        Err(e) => {
-            eprintln!("Error: {e}");
-            std::process::exit(1);
-        }
-    };
+    let config = config::Config::load(&config_path)?;
 
     info!("Loaded {} modifier remaps", config.modifier_remaps.len());
     info!("Loaded {} remaps", config.remaps.len());
@@ -62,13 +57,17 @@ fn main() {
                 "Applied {} modifier remap(s) via hidutil",
                 config.modifier_remaps.len()
             ),
-            Err(e) => eprintln!("Warning: failed to apply modifier remaps: {e}"),
+            Err(e) => log::warn!("Failed to apply modifier remaps: {e}"),
         }
     }
 
     let engine = engine::Engine::new(config);
+    event_tap::run(engine)
+}
 
-    if let Err(e) = event_tap::run(engine) {
+#[allow(clippy::print_stderr)] // last-resort error reporting when logger may not be initialized
+fn main() {
+    if let Err(e) = run() {
         eprintln!("Error: {e}");
         std::process::exit(1);
     }
