@@ -10,5 +10,5 @@
 raycast-extension/node_modules/
 raycast-extension/build/
 
-# Docs (internal)
-docs/
+# Internal plans
+plans/
