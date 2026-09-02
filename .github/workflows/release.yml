@@ -1,0 +1,253 @@
+name: Release
+
+# ── Read-only tagged-release BUILD pipeline ───────────────────────────
+#
+# This workflow builds and validates release artifacts but does NOT publish
+# a GitHub Release. There is no `contents: write` job or token anywhere.
+#
+# Job graph: assert-trusted-dispatch → validate-tag → [fmt, clippy, test]
+#            → build (uploads artifacts via actions/upload-artifact)
+#
+# Manual GitHub Release publication is BLOCKED until these external
+# prerequisites are configured and verified (see RELEASE_SETUP.md):
+#   1. Protected `release` environment with ≥1 independent required reviewer.
+#   2. An environment-scoped `RELEASE_AUTHORIZATION` sentinel secret (NOT a
+#      repo/org secret — broader-scope secrets defeat the fail-closed gate).
+#   3. Strict `main` branch protection: PRs required, ≥1 approval,
+#      strict + up-to-date Format/Clippy/Test checks.
+#   4. A mandatory immutable `v*` tag ruleset restricting creation/update/
+#      deletion (preferably requiring signed tags).
+#   5. Actions policy: allow only reviewed actions, require SHA pins.
+#   6. The exposed API credential incident is resolved (rotated, removed
+#      from inherited launchd state, attested).
+#
+# When all six are verified, a future automated publish job can be added
+# with a `contents: write` job gated on the environment + sentinel.
+# Until then, maintainers download the artifacts from the Actions run and
+# create the release manually after review.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to build, e.g. v0.1.0 (must be a real v* tag whose commit is merged to main)"
+        required: true
+        type: string
+
+permissions:
+  contents: read # workflow-wide: no write token anywhere
+
+concurrency:
+  group: release-${{ inputs.tag }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  assert-trusted-dispatch:
+    name: Assert trusted dispatch (main)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Reject unless dispatched from main
+        env:
+          GITHUB_REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "FAIL: release workflow must be dispatched from refs/heads/main (got $GITHUB_REF)"
+            exit 1
+          fi
+          echo "OK: dispatched from main"
+
+  validate-tag:
+    name: Validate tag (trusted & version-matched)
+    needs: assert-trusted-dispatch
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.validate.outputs.tag }}
+      version: ${{ steps.validate.outputs.version }}
+      tag_commit: ${{ steps.validate.outputs.tag_commit }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+          ref: main
+
+      - name: Validate tag is v*, merged to main, and version-matched
+        id: validate
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          TAG="$INPUT_TAG"
+          if ! printf '%s' "$TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "FAIL: tag '$TAG' is not a semver 'vX.Y.Z' form"
+            exit 1
+          fi
+          if ! git rev-parse -q --verify "refs/tags/${TAG}" >/dev/null; then
+            echo "FAIL: tag '$TAG' does not exist in this repository"
+            exit 1
+          fi
+          TAG_COMMIT="$(git rev-parse "refs/tags/${TAG}^{commit}")"
+          printf 'tag_commit=%s\n' "$TAG_COMMIT" >> "$GITHUB_OUTPUT"
+          if ! git merge-base --is-ancestor "$TAG_COMMIT" origin/main; then
+            echo "FAIL: tag '$TAG' commit $TAG_COMMIT is NOT an ancestor of main"
+            exit 1
+          fi
+          TAG_VERSION="${TAG#v}"
+          CARGO_VERSION="$(git show "${TAG_COMMIT}:Cargo.toml" | grep -m1 '^version' | sed 's/version = "\(.*\)"/\1/')"
+          if [ "$TAG_VERSION" != "$CARGO_VERSION" ]; then
+            echo "FAIL: tag '$TAG' (version '$TAG_VERSION') != Cargo.toml version '$CARGO_VERSION' at tag commit"
+            exit 1
+          fi
+          echo "OK: tag $TAG ($TAG_VERSION) @ $TAG_COMMIT is merged to main and version-matched"
+          printf 'tag=%s\n' "$TAG" >> "$GITHUB_OUTPUT"
+          printf 'version=%s\n' "$TAG_VERSION" >> "$GITHUB_OUTPUT"
+
+  fmt:
+    name: Format
+    needs: validate-tag
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ needs.validate-tag.outputs.tag_commit }}
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # v1
+        with:
+          components: rustfmt
+      - run: cargo fmt --check
+
+  clippy:
+    name: Clippy
+    needs: validate-tag
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ needs.validate-tag.outputs.tag_commit }}
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # v1
+        with:
+          components: clippy
+      - run: cargo clippy --locked -- -D warnings
+
+  test:
+    name: Test
+    needs: validate-tag
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ needs.validate-tag.outputs.tag_commit }}
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # v1
+      - run: cargo test --locked
+
+  build:
+    name: Build + package + checksum
+    needs: [validate-tag, fmt, clippy, test]
+    runs-on: macos-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ needs.validate-tag.outputs.tag_commit }}
+          fetch-depth: 0
+
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # v1
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - name: Build universal binary
+        run: |
+          set -euo pipefail
+          cargo build --release --locked --target aarch64-apple-darwin
+          cargo build --release --locked --target x86_64-apple-darwin
+          lipo -create -output switcheroo-universal \
+            target/aarch64-apple-darwin/release/switcheroo \
+            target/x86_64-apple-darwin/release/switcheroo
+          file switcheroo-universal | grep -q "universal binary"
+
+      - name: Ad-hoc sign universal binary
+        run: codesign --force --sign - switcheroo-universal
+
+      - name: Verify --version on universal binary (exact match)
+        env:
+          TAG_VERSION: ${{ needs.validate-tag.outputs.version }}
+        run: |
+          set -euo pipefail
+          OUT="$(./switcheroo-universal --version)"
+          EXPECTED="switcheroo ${TAG_VERSION}"
+          if [ "$OUT" != "$EXPECTED" ]; then
+            echo "FAIL: binary --version '$OUT' != expected '$EXPECTED'"
+            exit 1
+          fi
+          echo "OK: binary reports $OUT"
+
+      - name: Assemble Switcheroo.app
+        env:
+          TAG_VERSION: ${{ needs.validate-tag.outputs.version }}
+        run: |
+          set -euo pipefail
+          mkdir -p Switcheroo.app/Contents/MacOS
+          mkdir -p Switcheroo.app/Contents/Resources
+          cp switcheroo-universal Switcheroo.app/Contents/MacOS/switcheroo
+          cp bundle/Info.plist Switcheroo.app/Contents/Info.plist
+          /usr/bin/plutil -replace CFBundleVersion -string "$TAG_VERSION" Switcheroo.app/Contents/Info.plist
+          /usr/bin/plutil -replace CFBundleShortVersionString -string "$TAG_VERSION" Switcheroo.app/Contents/Info.plist
+          /usr/bin/plutil -lint Switcheroo.app/Contents/Info.plist
+          codesign --force --sign - Switcheroo.app
+
+      - name: Build source archive
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+          TAG_COMMIT: ${{ needs.validate-tag.outputs.tag_commit }}
+        run: |
+          set -euo pipefail
+          TAG="$INPUT_TAG"
+          git archive --format=tar.gz --prefix="switcheroo-${TAG}/" \
+            --output "switcheroo-${TAG}-source.tar.gz" "$TAG_COMMIT"
+
+      - name: Build binary archive (includes scripts/lib.sh)
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          TAG="$INPUT_TAG"
+          tar -czf "switcheroo-${TAG}-macos-universal.tar.gz" \
+            Switcheroo.app \
+            com.mitchelljphayes.switcheroo.plist \
+            install-binary.sh \
+            uninstall.sh \
+            scripts/lib.sh \
+            config.toml \
+            README.md \
+            LICENSE
+
+      - name: Generate and verify SHA-256 checksums
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          TAG="$INPUT_TAG"
+          shasum -a 256 \
+            "switcheroo-${TAG}-source.tar.gz" \
+            "switcheroo-${TAG}-macos-universal.tar.gz" \
+            > checksums-sha256.txt
+          cat checksums-sha256.txt
+          shasum -a 256 -c checksums-sha256.txt
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-artifacts
+          path: |
+            switcheroo-${{ inputs.tag }}-source.tar.gz
+            switcheroo-${{ inputs.tag }}-macos-universal.tar.gz
+            checksums-sha256.txt
+          retention-days: 7

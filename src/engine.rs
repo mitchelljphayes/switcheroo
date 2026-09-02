@@ -1,6 +1,5 @@
 use crate::config::Config;
 use crate::keycode::{KeyCode, Modifiers};
-use log::debug;
 use std::time::Instant;
 
 /// The remap engine processes key events and decides what to do with them.
@@ -134,7 +133,6 @@ impl Engine {
 
             if is_press {
                 // Key pressed — start tracking
-                debug!("Tap-hold key pressed: {keycode}");
                 state.pressed_at = Some(Instant::now());
                 state.used_as_hold = false;
                 // Pass through — let the modifier take effect normally
@@ -154,12 +152,10 @@ impl Engine {
             state.used_as_hold = false;
 
             if was_tap {
-                debug!("Tap-hold: {keycode} tapped → emitting {}", th.tap);
                 // Suppress the modifier key-up and emit the tap key instead
                 return Some(Action::EmitTap(th.tap));
             }
 
-            debug!("Tap-hold: {keycode} used as hold ({})", th.hold);
             // Normal modifier release — pass through
             return Some(Action::Pass);
         }
@@ -169,14 +165,8 @@ impl Engine {
     /// Mark all currently-held tap-hold keys as "used as hold"
     /// because another key was pressed while they were down.
     fn mark_tap_holds_as_used(&mut self, _trigger_key: KeyCode) {
-        for (th, state) in self.config.tap_holds.iter().zip(&mut self.tap_hold_state) {
+        for (_, state) in self.config.tap_holds.iter().zip(&mut self.tap_hold_state) {
             if state.pressed_at.is_some() {
-                if !state.used_as_hold {
-                    debug!(
-                        "Tap-hold key {} now used as hold (another key pressed)",
-                        th.key
-                    );
-                }
                 state.used_as_hold = true;
             }
         }
@@ -185,7 +175,6 @@ impl Engine {
     fn check_remaps(&self, keycode: KeyCode) -> Option<Action> {
         for remap in &self.config.remaps {
             if keycode == remap.from {
-                debug!("Remap: {} → {}", remap.from, remap.to);
                 return Some(Action::Replace(remap.to));
             }
         }
@@ -195,10 +184,6 @@ impl Engine {
     fn check_conditional_remaps(&self, keycode: KeyCode, modifiers: Modifiers) -> Option<Action> {
         for remap in &self.config.conditional_remaps {
             if keycode == remap.from && modifiers.is_active(remap.modifier) {
-                debug!(
-                    "Conditional remap: {} + {} → {}",
-                    remap.modifier, remap.from, remap.to
-                );
                 return Some(Action::Replace(remap.to));
             }
         }
@@ -230,17 +215,9 @@ impl Engine {
 
             // Remove stale presses outside the window
             let window = std::time::Duration::from_millis(chord.window_ms);
-            let before = pending.pressed.len();
             pending
                 .pressed
                 .retain(|(_, t)| now.duration_since(*t) < window);
-            if pending.pressed.len() < before {
-                debug!(
-                    "Chord: expired {} stale keys (window {}ms)",
-                    before - pending.pressed.len(),
-                    chord.window_ms
-                );
-            }
 
             // Add this key press (avoid duplicates)
             if pending.pressed.iter().any(|(k, _)| *k == keycode) {
@@ -255,12 +232,6 @@ impl Engine {
                 pending.pressed.push((keycode, now));
             }
 
-            debug!(
-                "Chord state: {}/{} keys pressed",
-                pending.pressed.len(),
-                chord.keys.len()
-            );
-
             // Check if all chord keys are pressed within the window
             if chord.keys.len() == pending.pressed.len()
                 && chord
@@ -268,7 +239,6 @@ impl Engine {
                     .iter()
                     .all(|k| pending.pressed.iter().any(|(pk, _)| pk == k))
             {
-                debug!("Chord triggered: {:?} → {}", chord.keys, chord.emit);
                 pending.pressed.clear();
                 // Chords involving modifier keys arrive as flagsChanged events,
                 // so we need to emit a synthetic key tap rather than replacing

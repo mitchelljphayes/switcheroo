@@ -4,8 +4,8 @@ import { join } from "path";
 import * as TOML from "smol-toml";
 
 export const CONFIG_PATH = join(homedir(), ".config", "switcheroo", "config.toml");
-export const LOG_PATH = "/tmp/switcheroo.err";
-export const PLIST_NAME = "com.local.switcheroo";
+export const LOG_PATH = join(homedir(), "Library", "Logs", "com.mitchelljphayes.switcheroo", "daemon.err");
+export const PLIST_NAME = "com.mitchelljphayes.switcheroo";
 
 // --- Raw TOML types (what's in the file) ---
 

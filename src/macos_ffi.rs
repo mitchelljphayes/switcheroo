@@ -86,7 +86,6 @@ pub fn toggle_caps_lock() -> Result<(), String> {
 
         // Toggle it
         let new_state = !current_state;
-        log::debug!("Caps lock: current={current_state}, setting to={new_state}");
         let kr = IOHIDSetModifierLockState(connection, K_IO_HID_CAPS_LOCK_STATE, new_state);
         IOServiceClose(connection);
 
@@ -94,7 +93,6 @@ pub fn toggle_caps_lock() -> Result<(), String> {
             return Err(format!("IOHIDSetModifierLockState failed: {kr:#x}"));
         }
 
-        log::info!("Caps lock toggled: {current_state} → {new_state}");
         Ok(())
     }
 }

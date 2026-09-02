@@ -89,6 +89,11 @@ pub struct Remap {
 pub struct TapHold {
     pub key: KeyCode,
     pub tap: KeyCode,
+    /// Held-modifier action. Currently informational — the engine passes the
+    /// original modifier through when a tap-hold key is used as a hold, so this
+    /// field is not read at runtime. It is retained as part of the config schema
+    /// so TOML round-trips and future hold-remap behavior stay intact.
+    #[allow(dead_code)]
     pub hold: KeyCode,
     pub timeout_ms: u64,
 }

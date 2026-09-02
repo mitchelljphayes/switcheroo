@@ -1,12 +1,8 @@
 #!/bin/bash
-# Source-build installer for Switcheroo.
-#
-# Builds the daemon from source, assembles + signs the .app bundle in a
-# same-filesystem staging directory, transactionally swaps it into place with
-# backup + rollback, and installs a LaunchAgent. Handles the v0.1.x identity
-# migration from com.local.switcheroo -> com.mitchelljphayes.switcheroo,
-# snapshotting and restoring only foreign hidutil mappings around the legacy
-# daemon's destructive shutdown using the NEW staged binary.
+# Binary installer for Switcheroo — installs the prebuilt universal .app
+# bundle shipped in the release archive. Does NOT run cargo; installs the
+# exact packaged binary after verifying its bundle identity, version, and
+# ad-hoc signature. Transactional same-filesystem swap with backup/rollback.
 set -euo pipefail
 
 PATH=/usr/bin:/bin:/usr/sbin:/sbin
@@ -16,19 +12,6 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=scripts/lib.sh
 . "${SCRIPT_DIR}/scripts/lib.sh"
 
-# Parse --cargo /absolute/path
-SW_CARGO_BIN=""
-while [ $# -gt 0 ]; do
-  case "$1" in
-    --cargo) SW_CARGO_BIN="$2"; shift 2;;
-    *) sw_err "unknown argument: $1";;
-  esac
-done
-if [ -n "$SW_CARGO_BIN" ]; then
-  export SW_CARGO_BIN
-fi
-
-BINARY_NAME="switcheroo"
 APP_NAME="Switcheroo.app"
 REAL_HOME="$(sw_real_home)"
 APP_DIR="${REAL_HOME}/.local/bin/${APP_NAME}"
@@ -38,7 +21,9 @@ PLIST_NAME="com.mitchelljphayes.switcheroo"
 PLIST_SRC="${SCRIPT_DIR}/${PLIST_NAME}.plist"
 PLIST_DST="${REAL_HOME}/Library/LaunchAgents/${PLIST_NAME}.plist"
 PLIST_DST_DIR="${REAL_HOME}/Library/LaunchAgents"
-SIGNING_IDENTITY="Switcheroo Dev"
+STAGED_APP_SRC="${SCRIPT_DIR}/${APP_NAME}"
+STAGED_BINARY="${STAGED_APP_SRC}/Contents/MacOS/switcheroo"
+EXPECTED_BUNDLE_ID="com.mitchelljphayes.switcheroo"
 OLD_LABEL="com.local.switcheroo"
 OLD_PLIST_DST="${REAL_HOME}/Library/LaunchAgents/${OLD_LABEL}.plist"
 
@@ -48,51 +33,39 @@ sw_ensure_safe_path "${APP_DIR_PARENT}"
 sw_ensure_safe_path "${CONFIG_DIR}"
 sw_ensure_safe_path "${PLIST_DST_DIR}"
 
-# Build from source.
-CARGO_BIN="$(sw_find_cargo)"
-echo "==> Building switcheroo (release) with ${CARGO_BIN}..."
-"${CARGO_BIN}" build --release --manifest-path "${SCRIPT_DIR}/Cargo.toml" \
-  || sw_err "cargo build failed"
+# Validate the packaged bundle before installing it.
+[ -d "${STAGED_APP_SRC}" ] || sw_err "packaged ${APP_NAME} not found next to this script"
+BUNDLE_ID="$("${SW_USR_DEFAULTS}" read "${STAGED_APP_SRC}/Contents/Info" CFBundleIdentifier 2>/dev/null || printf '')"
+[ "${BUNDLE_ID}" = "${EXPECTED_BUNDLE_ID}" ] \
+  || sw_err "packaged app bundle id '${BUNDLE_ID}' != expected '${EXPECTED_BUNDLE_ID}' — refusing to install"
 
-# Stage the new app bundle on the SAME filesystem as the destination.
+BIN_VERSION="$("${STAGED_BINARY}" --version 2>/dev/null | "${SW_USR_HEAD}" -1 || printf '')"
+printf '%s' "${BIN_VERSION}" | "${SW_USR_GREP}" -q '^switcheroo [0-9]' \
+  || sw_err "packaged switcheroo binary failed --version smoke test (got: '${BIN_VERSION}')"
+
+"${SW_USR_CODESIGN}" --verify --strict "${STAGED_APP_SRC}" 2>/dev/null \
+  || sw_err "packaged app fails codesign --verify (signature invalid or absent)"
+
+echo "==> Verified packaged ${APP_NAME} (id=${BUNDLE_ID}, ${BIN_VERSION}, ad-hoc signed)"
+
+# Stage on same filesystem.
 echo "==> Staging app bundle (same-filesystem, transactional)"
 _SW_STAGING="$("${SW_USR_MKTEMP}" -d -p "${APP_DIR_PARENT}" -t switcheroo.stage.XXXXXX)"
+"${SW_BIN_CP}" -R "${STAGED_APP_SRC}" "${_SW_STAGING}/${APP_NAME}"
 STAGE_APP="${_SW_STAGING}/${APP_NAME}"
-STAGE_BINARY="${STAGE_APP}/Contents/MacOS/${BINARY_NAME}"
-"${SW_BIN_MKDIR}" -p "${STAGE_APP}/Contents/MacOS"
-"${SW_BIN_MKDIR}" -p "${STAGE_APP}/Contents/Resources"
-"${SW_BIN_CP}" "${SCRIPT_DIR}/target/release/${BINARY_NAME}" "${STAGE_APP}/Contents/MacOS/${BINARY_NAME}"
-"${SW_BIN_CP}" "${SCRIPT_DIR}/bundle/Info.plist" "${STAGE_APP}/Contents/Info.plist"
-if [ -d "${SCRIPT_DIR}/bundle/Switcheroo.iconset" ]; then
-  "${SW_USR_ICONUTIL}" -c icns "${SCRIPT_DIR}/bundle/Switcheroo.iconset" \
-    -o "${STAGE_APP}/Contents/Resources/AppIcon.icns" || sw_err "iconutil failed"
-elif [ -f "${APP_DIR}/Contents/Resources/AppIcon.icns" ]; then
-  "${SW_BIN_CP}" "${APP_DIR}/Contents/Resources/AppIcon.icns" "${STAGE_APP}/Contents/Resources/AppIcon.icns"
-fi
+STAGE_BINARY="${STAGE_APP}/Contents/MacOS/switcheroo"
 
-echo "==> Signing staged app bundle"
-if "${SW_USR_SECURITY}" find-identity -v -p codesigning 2>/dev/null | "${SW_USR_GREP}" -q "${SIGNING_IDENTITY}"; then
-  "${SW_USR_CODESIGN}" --force --sign "${SIGNING_IDENTITY}" "${STAGE_APP}" || sw_err "codesign failed"
-  echo "    Signed with '${SIGNING_IDENTITY}'"
-else
-  echo "    No '${SIGNING_IDENTITY}' certificate found — using ad-hoc signing."
-  "${SW_USR_CODESIGN}" --force --sign - "${STAGE_APP}" || sw_err "ad-hoc codesign failed"
-fi
-
-# CRITICAL: capture pre-existing state BEFORE installing the rollback trap.
-# Early failure (e.g. migration snapshot failure) must never delete a
-# pre-existing installation.
+# CRITICAL: capture pre-existing state BEFORE the rollback trap.
 sw_capture_state "${APP_DIR}" "${PLIST_DST}" "${PLIST_NAME}" "${OLD_LABEL}"
 trap sw_rollback EXIT
 
-# Stop existing agents BEFORE overwriting the live bundle.
+# Stop existing agents.
 echo "==> Stopping existing Switcheroo agents"
 if [ "$_SW_NEW_WAS_RUNNING" = "yes" ]; then
   sw_bootout_safe "${PLIST_NAME}"
 fi
 
-# Old label migration: use the NEW staged binary (not the old installed one)
-# for the foreign-only snapshot. The old binary doesn't support the flag.
+# Old label migration: use the NEW staged binary (not the old installed one).
 if [ "$_SW_OLD_WAS_RUNNING" = "yes" ]; then
   echo "==> Migrating from old label ${OLD_LABEL} (verified live Switcheroo job)..."
   echo "    Snapshotting foreign hidutil mappings (using NEW staged binary)..."
@@ -111,15 +84,16 @@ fi
 echo "==> Installing config to ${CONFIG_DIR}/config.toml"
 if [ ! -f "${CONFIG_DIR}/config.toml" ]; then
   sw_reject_symlink "${CONFIG_DIR}/config.toml"
-  "${SW_BIN_CP}" "${SCRIPT_DIR}/config.toml" "${CONFIG_DIR}/config.toml"
+  [ -f "${SCRIPT_DIR}/config.toml" ] && "${SW_BIN_CP}" "${SCRIPT_DIR}/config.toml" "${CONFIG_DIR}/config.toml" \
+    || printf '# Switcheroo config — see README.md\n' > "${CONFIG_DIR}/config.toml"
   "${SW_BIN_CHMOD}" 600 "${CONFIG_DIR}/config.toml"
   echo "    Created new config"
 else
   sw_reject_symlink "${CONFIG_DIR}/config.toml"
-  echo "    Config already exists, skipping (edit ${CONFIG_DIR}/config.toml)"
+  echo "    Config already exists, skipping"
 fi
 
-# Transactional app swap: back up old, move new into place.
+# Transactional app swap.
 sw_reject_symlink "${APP_DIR}"
 if [ "$_SW_APP_HAD_PRIOR" = "yes" ]; then
   _SW_APP_BACKUP="$("${SW_USR_MKTEMP}" -d -p "${APP_DIR_PARENT}" -t switcheroo.app.bak.XXXXXX)"
@@ -127,12 +101,12 @@ if [ "$_SW_APP_HAD_PRIOR" = "yes" ]; then
   _SW_APP_BACKUP="${_SW_APP_BACKUP}/${APP_NAME}"
 fi
 _SW_PHASE="app_backed_up"
-# Failure-injection point: if the staged move below fails, the app_backed_up
-# phase ensures rollback restores the prior app from backup.
+# Failure-injection point: if the staged move below fails, rollback
+# restores the prior app from backup (app_backed_up phase).
 "${SW_BIN_MV}" "${STAGE_APP}" "${APP_DIR}"
 _SW_PHASE="app_swapped"
 
-# Transactional plist install: back up old, move new into place.
+# Transactional plist install.
 echo "==> Installing LaunchAgent"
 TMP_PLIST="$(sw_render_plist "${PLIST_SRC}" "${APP_DIR}" "${PLIST_DST_DIR}")"
 if [ "$_SW_PLIST_HAD_PRIOR" = "yes" ]; then
@@ -154,7 +128,7 @@ fi
 _SW_BOOTSTRAPPED_BY_US="yes"
 _SW_PHASE="bootstrapped"
 
-# Success: commit the transaction, clean up backups.
+# Success: commit.
 if [ -f "${OLD_PLIST_DST}" ] && sw_plist_is_switcheroo "${OLD_PLIST_DST}"; then
   "${SW_BIN_RM}" -f "${OLD_PLIST_DST}"
 fi
@@ -168,15 +142,11 @@ _SW_PHASE="done"
 trap - EXIT
 
 echo ""
-echo "Done! Switcheroo is running."
+echo "Done! Switcheroo is running (${BIN_VERSION})."
 echo ""
 echo "First install only (or after the bundle-id migration): Grant Accessibility access:"
 echo "  System Settings -> Privacy & Security -> Accessibility"
 echo "  Add ${APP_DIR}"
-echo "  (Subsequent rebuilds preserve the permission via code signing)"
-echo "  Note: the v0.1.x migration changed the bundle id from com.local.switcheroo"
-echo "  to com.mitchelljphayes.switcheroo, so an existing Accessibility grant must"
-echo "  be re-issued once after upgrade."
 echo ""
 echo "Commands:"
 echo "  Stop:    ${SW_BIN_LAUNCHCTL} bootout gui/$(sw_uid)/${PLIST_NAME}"

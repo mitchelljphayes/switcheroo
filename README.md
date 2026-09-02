@@ -51,20 +51,51 @@ window_ms = 100
 
 ## Install
 
+### Option A — Binary release (no build tools required)
+
+Download a release archive from the [Releases page](https://github.com/mitchelljphayes/switcheroo/releases), then:
+
+```bash
+xattr -d com.apple.quarantine switcheroo-vX.Y.Z-macos-universal.tar.gz
+tar -xzf switcheroo-vX.Y.Z-macos-universal.tar.gz
+./install-binary.sh
+```
+
+The binary installer installs the exact packaged universal `Switcheroo.app`
+(it does **not** run `cargo build`). It verifies the bundle identity
+(`com.mitchelljphayes.switcheroo`), runs `--version` as a smoke test, and
+checks the ad-hoc signature before installing. Releases are **unnotarized**;
+macOS Gatekeeper will warn — the `xattr -d` step above removes the quarantine
+flag so the installer can run.
+
+### Option B — Build from source
+
 ```bash
 ./install.sh
 ```
 
 This will:
-1. Build the release binary
-2. Install app bundle to `~/.local/bin/Switcheroo.app`
-3. Code sign with your local certificate (preserves Accessibility permission across rebuilds)
-4. Copy config to `~/.config/switcheroo/config.toml`
-5. Install and start a LaunchAgent
+1. Build the release binary with `cargo`
+2. Stage + ad-hoc sign the `.app` bundle and atomically swap it into `~/.local/bin/Switcheroo.app`
+3. Copy config to `~/.config/switcheroo/config.toml`
+4. Install and start a LaunchAgent, migrating from the old `com.local.switcheroo` label if present
+
+Both installers:
+- Stop any existing Switcheroo agent before overwriting the bundle
+- Validate `~`, paths, and plist ownership/permissions (rejecting hostile symlinks)
+- Migrate the old `com.local.switcheroo` label safely (only if its plist points at Switcheroo)
+- Verify the agent is registered after bootstrap, rolling back on failure
 
 **Important**: Grant Accessibility access after first install:
 - System Settings → Privacy & Security → Accessibility
 - Add `~/.local/bin/Switcheroo.app`
+
+> **Bundle-id migration (v0.1.x):** The LaunchAgent identity changed from
+> `com.local.switcheroo` to `com.mitchelljphayes.switcheroo`. An existing
+> Accessibility grant is tied to the old bundle id and must be **re-issued
+> once** after upgrading. `install.sh` detects and cleanly stops the old
+> label; `uninstall.sh` cleans up both. Unrelated `hidutil` mappings are
+> preserved across the migration.
 
 ## Usage
 
@@ -77,9 +108,9 @@ switcheroo /path/to/config.toml        # explicit config path
 RUST_LOG=debug switcheroo
 
 # As a service (managed by install.sh)
-launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.local.switcheroo.plist
-launchctl bootout gui/$(id -u)/com.local.switcheroo
-tail -f /tmp/switcheroo.err
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.mitchelljphayes.switcheroo.plist
+launchctl bootout gui/$(id -u)/com.mitchelljphayes.switcheroo
+tail -f ~/Library/Logs/com.mitchelljphayes.switcheroo/daemon.err
 ```
 
 ## Raycast Extension

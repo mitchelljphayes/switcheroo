@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.mitchelljphayes.switcheroo</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>__APP_DIR__/Contents/MacOS/switcheroo</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <!-- The daemon opens its own private per-user log files at
+         ~/Library/Logs/com.mitchelljphayes.switcheroo/daemon.{log,err}
+         with mode 0600, so launchd's stdout/stderr redirect is routed to
+         /dev/null to avoid the world-writable /tmp symlink-attack surface. -->
+    <key>StandardOutPath</key>
+    <string>/dev/null</string>
+    <key>StandardErrorPath</key>
+    <string>/dev/null</string>
+    <!-- Defense-in-depth: any file launchd does create is user-only (077 umask). -->
+    <key>Umask</key>
+    <integer>63</integer>
+</dict>
+</plist>
