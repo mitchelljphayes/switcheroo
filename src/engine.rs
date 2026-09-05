@@ -495,6 +495,7 @@ mod tests {
 }
 
 /// Determine if a flagsChanged event represents a press or release.
+#[allow(clippy::items_after_test_module)] // pre-existing: helper after test mod
 fn is_modifier_press(keycode: KeyCode, modifiers: Modifiers) -> bool {
     match keycode {
         KeyCode::LEFT_SHIFT | KeyCode::RIGHT_SHIFT => modifiers.shift,

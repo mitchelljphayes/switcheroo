@@ -106,7 +106,7 @@ impl UserKeyMappingEntry {
 /// Record of what Switcheroo applied and what the baseline was, used by
 /// [`remove_owned_mappings`] to clean up only owned entries on shutdown and
 /// restore pre-existing baseline mappings Switcheroo overrode.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct AppliedMappings {
     /// Mappings that were live before Switcheroo applied anything (the
     /// "baseline" — anything Switcheroo did NOT set this session). Used at
@@ -1079,7 +1079,31 @@ fn json_int(obj: &serde_json::Value, key: &str) -> Option<u64> {
     }
 }
 
+// ── test-only pub(crate) helper for state-dir isolation ─────────────
+//
+// Exposed so `wake.rs` tests can run `apply_modifier_remaps_owned_with`
+// (which writes the state file) without touching the real
+// `~/.config/switcheroo/`. Uses the same `STATE_DIR_MUTEX` as the internal
+// `with_isolated_state` to serialize all state-dir tests.
 #[cfg(test)]
+pub(crate) fn with_isolated_state_test<F: FnOnce()>(f: F) {
+    // Delegate to the internal test helper which holds the serialization mutex.
+    tests::with_isolated_state(f);
+}
+
+#[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::unreadable_literal,
+    clippy::redundant_closure_for_method_calls,
+    clippy::items_after_statements,
+    clippy::print_stderr,
+    clippy::too_many_lines,
+    clippy::needless_raw_string_hashes,
+    clippy::no_effect_underscore_binding,
+    clippy::doc_markdown
+)]
 mod tests {
     use super::*;
     use std::cell::RefCell;
@@ -1092,7 +1116,7 @@ mod tests {
 
     /// Run a closure with an isolated temp state dir set via
     /// `SWITCHEROO_TEST_STATE_DIR`. Restores the prior value on exit.
-    fn with_isolated_state<F: FnOnce()>(f: F) {
+    pub(super) fn with_isolated_state<F: FnOnce()>(f: F) {
         let _guard = STATE_DIR_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
         let tmp = std::env::temp_dir().join("switcheroo_hidutil_state_test");
         let _ = std::fs::remove_dir_all(&tmp);

@@ -1,63 +1,183 @@
 import { execFileSync } from "child_process";
-import { homedir } from "os";
-import { existsSync, statSync } from "fs";
+import { existsSync, lstatSync } from "fs";
 import { join } from "path";
 import { PLIST_NAME } from "./config";
+import { parseLaunchctlProgram, isValidHomebrewExec } from "./service-pure.mjs";
 
+export { parseLaunchctlProgram, isValidHomebrewExec };
+
+// ── Absolute tool paths ───────────────────────────────────────────────
 const LAUNCHCTL = "/bin/launchctl";
 const ID = "/usr/bin/id";
 const PLUTIL = "/usr/bin/plutil";
 
-const PLIST_PATH = join(homedir(), "Library", "LaunchAgents", `${PLIST_NAME}.plist`);
-const EXPECTED_EXEC_SUFFIX = ".local/bin/Switcheroo.app/Contents/MacOS/switcheroo";
-const EXPECTED_EXEC = join(homedir(), EXPECTED_EXEC_SUFFIX);
+const STANDALONE_LABEL = PLIST_NAME;
+const STANDALONE_PLIST_PATH = join(
+  // Use homedir() only for path construction, never for execution
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  require("os").homedir(),
+  "Library",
+  "LaunchAgents",
+  `${PLIST_NAME}.plist`,
+);
+const STANDALONE_EXEC_SUFFIX =
+  ".local/bin/Switcheroo.app/Contents/MacOS/switcheroo";
+const STANDALONE_EXPECTED_EXEC = join(
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  require("os").homedir(),
+  STANDALONE_EXEC_SUFFIX,
+);
+
+const HOMEBREW_LABEL = "homebrew.mxcl.switcheroo";
+
+export type ServiceLayout = "standalone" | "homebrew";
+export interface ServiceInfo {
+  layout: ServiceLayout;
+  label: string;
+  executable: string;
+}
 
 function getUid(): string {
   return execFileSync(ID, ["-u"], { encoding: "utf-8" }).trim();
 }
 
-/** Parse the `program =` line from `launchctl print` output. Returns the
- * program path or empty string if not found. Never dumps environment. */
-function parseLaunchctlProgram(output: string): string {
-  for (const line of output.split("\n")) {
-    const m = line.match(/^\s*program\s*=\s*(.*)$/);
-    if (m) return m[1];
-  }
-  return "";
-}
-
-/** True if the loaded job's program matches the expected Switcheroo executable. */
-function loadedJobIsSwitcheroo(uid: string): boolean {
+function getLaunchctlPrint(uid: string, label: string): string | null {
   try {
-    const output = execFileSync(LAUNCHCTL, ["print", `gui/${uid}/${PLIST_NAME}`], {
+    return execFileSync(LAUNCHCTL, ["print", `gui/${uid}/${label}`], {
       encoding: "utf-8",
       stdio: ["pipe", "pipe", "pipe"],
     });
-    const prog = parseLaunchctlProgram(output);
-    return prog === EXPECTED_EXEC;
   } catch {
-    return false;
+    return null;
   }
 }
 
-/** True if the plist file exists and its ProgramArguments[0] matches the
- * expected Switcheroo executable. Validates via plutil. */
-function plistIsSwitcheroo(): boolean {
-  if (!existsSync(PLIST_PATH)) return false;
-  // Verify ownership: plist must be owned by the current user.
+/** Resolve the one expected Homebrew executable by probing brew.
+ * Returns the exact path only if it matches one of the allowlisted
+ * official paths AND the file exists as a regular non-symlink file. */
+function getHomebrewExpectedExec(): string | null {
+  for (const prefix of ["/opt/homebrew", "/usr/local"]) {
+    const brewBin = join(prefix, "bin", "brew");
+    if (!existsSync(brewBin)) continue;
+    try {
+      const brewPrefix = execFileSync(brewBin, ["--prefix", "switcheroo"], {
+        encoding: "utf-8",
+        stdio: ["pipe", "pipe", "pipe"],
+        timeout: 5000,
+      }).trim();
+      const candidate = join(
+        brewPrefix,
+        "Switcheroo.app/Contents/MacOS/switcheroo",
+      );
+      // Must be an exact allowlisted path
+      if (!isValidHomebrewExec(candidate)) continue;
+      // Must exist as a regular file (not symlink)
+      if (!existsSync(candidate)) continue;
+      try {
+        const lst = lstatSync(candidate);
+        if (!lst.isFile()) continue;
+      } catch {
+        continue;
+      }
+      return candidate;
+    } catch {
+      continue;
+    }
+  }
+  return null;
+}
+
+/** Get the loaded job's program for a label. Returns null if not loaded. */
+function getLoadedProgram(uid: string, label: string): string | null {
+  const output = getLaunchctlPrint(uid, label);
+  if (output === null) return null;
+  return parseLaunchctlProgram(output);
+}
+
+/** Detect which service layout is active. Binds one install to one exact
+ * executable. If both are loaded, throws. If neither, returns null.
+ * For Homebrew, the loaded job program MUST exactly equal the executable
+ * returned by getHomebrewExpectedExec (no dual-prefix mismatch). */
+export function detectLayout(): ServiceInfo | null {
+  const uid = getUid();
+
+  const standaloneProg = getLoadedProgram(uid, STANDALONE_LABEL);
+  const homebrewProg = getLoadedProgram(uid, HOMEBREW_LABEL);
+
+  const standaloneActive =
+    standaloneProg !== null && standaloneProg === STANDALONE_EXPECTED_EXEC;
+  const homebrewProgValid = isValidHomebrewExec(homebrewProg ?? "");
+
+  // For Homebrew: the loaded program must match the detected installation
+  const homebrewExpected = getHomebrewExpectedExec();
+  const homebrewActive =
+    homebrewProgValid &&
+    homebrewExpected !== null &&
+    homebrewProg === homebrewExpected;
+
+  if (standaloneActive && homebrewActive) {
+    throw new Error(
+      "Both standalone and Homebrew Switcheroo services are loaded — unsupported. Stop one before restarting.",
+    );
+  }
+
+  if (standaloneActive) {
+    return {
+      layout: "standalone",
+      label: STANDALONE_LABEL,
+      executable: STANDALONE_EXPECTED_EXEC,
+    };
+  }
+
+  if (homebrewActive) {
+    return {
+      layout: "homebrew",
+      label: HOMEBREW_LABEL,
+      executable: homebrewExpected!,
+    };
+  }
+
+  return null;
+}
+
+/** Validate the standalone plist: lstat (not stat), regular file, owner,
+ * exact Label, exact ProgramArguments[0]. */
+function plistIsSwitcherooStandalone(): boolean {
+  if (!existsSync(STANDALONE_PLIST_PATH)) return false;
+  let lst;
   try {
-    const stat = statSync(PLIST_PATH);
-    if (stat.uid !== Number(getUid())) return false;
+    lst = lstatSync(STANDALONE_PLIST_PATH);
   } catch {
     return false;
   }
+  if (!lst.isFile()) return false;
+  if (lst.uid !== Number(getUid())) return false;
+
+  try {
+    const label = execFileSync(
+      PLUTIL,
+      ["-extract", "Label", "raw", "-o", "-", STANDALONE_PLIST_PATH],
+      { encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] },
+    ).trim();
+    if (label !== STANDALONE_LABEL) return false;
+  } catch {
+    return false;
+  }
+
   try {
     const prog = execFileSync(
       PLUTIL,
-      ["-extract", "ProgramArguments.0", "raw", "-o", "-", PLIST_PATH],
+      [
+        "-extract",
+        "ProgramArguments.0",
+        "raw",
+        "-o",
+        "-",
+        STANDALONE_PLIST_PATH,
+      ],
       { encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] },
     ).trim();
-    return prog === EXPECTED_EXEC;
+    return prog === STANDALONE_EXPECTED_EXEC;
   } catch {
     return false;
   }
@@ -65,57 +185,79 @@ function plistIsSwitcheroo(): boolean {
 
 export function restartService(): void {
   const uid = getUid();
+  const info = detectLayout();
 
-  // Stop: only bootout if the loaded job is verified Switcheroo. Refuse
-  // to stop a foreign/ambiguous job sharing the label (collision safety).
-  try {
-    // Check if the label is loaded at all.
-    execFileSync(LAUNCHCTL, ["print", `gui/${uid}/${PLIST_NAME}`], {
-      encoding: "utf-8",
-      stdio: ["pipe", "pipe", "pipe"],
-    });
-    // Label is loaded — verify it's ours before bootout.
-    if (loadedJobIsSwitcheroo(uid)) {
-      execFileSync(LAUNCHCTL, ["bootout", `gui/${uid}/${PLIST_NAME}`], {
-        encoding: "utf-8",
-        stdio: ["pipe", "pipe", "pipe"],
-      });
-    } else {
-      // Loaded but not Switcheroo — refuse to stop a foreign job.
+  if (info === null) {
+    if (!plistIsSwitcherooStandalone()) {
+      const homebrewExec = getHomebrewExpectedExec();
+      if (homebrewExec) {
+        throw new Error(
+          "Switcheroo is not running. Start it with: brew services start switcheroo",
+        );
+      }
       throw new Error(
-        `Refusing to bootout ${PLIST_NAME}: loaded job program does not match Switcheroo (possible collision)`,
+        "Switcheroo is not installed or not running. Install via `brew install switcheroo` or run ./install.sh.",
       );
     }
-  } catch (e) {
-    // Not loaded — that's fine, proceed to bootstrap.
-    if (e instanceof Error && e.message.startsWith("Refusing")) throw e;
-  }
-
-  // Start: validate the plist is Switcheroo before bootstrap.
-  if (!plistIsSwitcheroo()) {
-    throw new Error(
-      `Refusing to bootstrap ${PLIST_NAME}: plist does not match Switcheroo or is missing`,
-    );
-  }
-  execFileSync(LAUNCHCTL, ["bootstrap", `gui/${uid}`, PLIST_PATH], {
-    encoding: "utf-8",
-    stdio: ["pipe", "pipe", "pipe"],
-  });
-}
-
-export function isServiceRunning(): boolean {
-  const uid = getUid();
-  try {
-    const output = execFileSync(
+    execFileSync(
       LAUNCHCTL,
-      ["print", `gui/${uid}/${PLIST_NAME}`],
+      ["bootstrap", `gui/${uid}`, STANDALONE_PLIST_PATH],
       {
         encoding: "utf-8",
         stdio: ["pipe", "pipe", "pipe"],
       },
     );
-    return output.includes("state = running") || output.includes("pid = ");
-  } catch {
-    return false;
+    return;
   }
+
+  if (info.layout === "standalone") {
+    if (!plistIsSwitcherooStandalone()) {
+      throw new Error(
+        `Refusing to restart ${STANDALONE_LABEL}: plist validation failed`,
+      );
+    }
+    execFileSync(LAUNCHCTL, ["bootout", `gui/${uid}/${STANDALONE_LABEL}`], {
+      encoding: "utf-8",
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+    if (!plistIsSwitcherooStandalone()) {
+      throw new Error(
+        `Refusing to re-bootstrap ${STANDALONE_LABEL}: plist changed after bootout (TOCTOU)`,
+      );
+    }
+    execFileSync(
+      LAUNCHCTL,
+      ["bootstrap", `gui/${uid}`, STANDALONE_PLIST_PATH],
+      {
+        encoding: "utf-8",
+        stdio: ["pipe", "pipe", "pipe"],
+      },
+    );
+  } else if (info.layout === "homebrew") {
+    // Re-verify the loaded job program equals the expected executable
+    // immediately before kickstart (TOCTOU protection)
+    const currentProg = getLoadedProgram(uid, HOMEBREW_LABEL);
+    if (currentProg !== info.executable) {
+      throw new Error(
+        `Refusing to kickstart ${HOMEBREW_LABEL}: loaded program changed (TOCTOU)`,
+      );
+    }
+    execFileSync(
+      LAUNCHCTL,
+      ["kickstart", "-k", `gui/${uid}/${HOMEBREW_LABEL}`],
+      {
+        encoding: "utf-8",
+        stdio: ["pipe", "pipe", "pipe"],
+      },
+    );
+  }
+}
+
+export function isServiceRunning(): boolean {
+  const info = detectLayout();
+  if (info === null) return false;
+  const uid = getUid();
+  const output = getLaunchctlPrint(uid, info.label);
+  if (output === null) return false;
+  return output.includes("state = running") || output.includes("pid = ");
 }

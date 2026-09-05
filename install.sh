@@ -48,10 +48,10 @@ sw_ensure_safe_path "${APP_DIR_PARENT}"
 sw_ensure_safe_path "${CONFIG_DIR}"
 sw_ensure_safe_path "${PLIST_DST_DIR}"
 
-# Build from source.
+# Build from source with --locked for reproducible builds.
 CARGO_BIN="$(sw_find_cargo)"
 echo "==> Building switcheroo (release) with ${CARGO_BIN}..."
-"${CARGO_BIN}" build --release --manifest-path "${SCRIPT_DIR}/Cargo.toml" \
+"${CARGO_BIN}" build --release --locked --manifest-path "${SCRIPT_DIR}/Cargo.toml" \
   || sw_err "cargo build failed"
 
 # Stage the new app bundle on the SAME filesystem as the destination.
@@ -63,6 +63,30 @@ STAGE_BINARY="${STAGE_APP}/Contents/MacOS/${BINARY_NAME}"
 "${SW_BIN_MKDIR}" -p "${STAGE_APP}/Contents/Resources"
 "${SW_BIN_CP}" "${SCRIPT_DIR}/target/release/${BINARY_NAME}" "${STAGE_APP}/Contents/MacOS/${BINARY_NAME}"
 "${SW_BIN_CP}" "${SCRIPT_DIR}/bundle/Info.plist" "${STAGE_APP}/Contents/Info.plist"
+# Stamp Info.plist version from the built binary so source builds always
+# report the Cargo version, not the hardcoded committed plist version.
+# Fail-closed: require exact "switcheroo X.Y.Z" output matching Cargo.toml.
+STAGED_BIN_VERSION_LINE="$("${STAGE_BINARY}" --version 2>/dev/null | "${SW_USR_HEAD}" -1 || true)"
+STAGED_BIN_VERSION="$(printf '%s' "${STAGED_BIN_VERSION_LINE}" | "${SW_USR_SED}" 's/^switcheroo //' || true)"
+if printf '%s' "${STAGED_BIN_VERSION}" | "${SW_USR_GREP}" -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+  # Require Cargo metadata extraction to succeed (fail-closed, no empty bypass)
+  CARGO_PKG_VER="$("${CARGO_BIN}" metadata --no-deps --format-version 1 --manifest-path "${SCRIPT_DIR}/Cargo.toml" 2>/dev/null \
+    | "${SW_USR_GREP}" -o '"version":"[^"]*"' | "${SW_USR_HEAD}" -1 | "${SW_USR_SED}" 's/"version":"\([^"]*\)"/\1/' || true)"
+  if [ -z "${CARGO_PKG_VER}" ]; then
+    sw_err "cargo metadata extraction failed — cannot verify binary version matches Cargo.toml"
+  fi
+  if ! printf '%s' "${CARGO_PKG_VER}" | "${SW_USR_GREP}" -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+    sw_err "Cargo.toml version '${CARGO_PKG_VER}' is not strict semver — refusing to install"
+  fi
+  if [ "${STAGED_BIN_VERSION}" != "${CARGO_PKG_VER}" ]; then
+    sw_err "binary version '${STAGED_BIN_VERSION}' != Cargo.toml version '${CARGO_PKG_VER}' — refusing to install with mismatched version"
+  fi
+  "${SW_USR_PLUTIL}" -replace CFBundleVersion -string "${STAGED_BIN_VERSION}" "${STAGE_APP}/Contents/Info.plist"
+  "${SW_USR_PLUTIL}" -replace CFBundleShortVersionString -string "${STAGED_BIN_VERSION}" "${STAGE_APP}/Contents/Info.plist"
+else
+  sw_err "binary --version output not exact 'switcheroo X.Y.Z': got '${STAGED_BIN_VERSION_LINE}' — refusing to install with unvalidated version"
+fi
+"${SW_USR_PLUTIL}" -lint "${STAGE_APP}/Contents/Info.plist" >/dev/null
 if [ -d "${SCRIPT_DIR}/bundle/Switcheroo.iconset" ]; then
   "${SW_USR_ICONUTIL}" -c icns "${SCRIPT_DIR}/bundle/Switcheroo.iconset" \
     -o "${STAGE_APP}/Contents/Resources/AppIcon.icns" || sw_err "iconutil failed"

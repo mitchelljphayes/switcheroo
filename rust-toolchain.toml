@@ -1,0 +1,7 @@
+[toolchain]
+# Pin Rust to an exact reviewed version for reproducible builds.
+# CI and local builds use this version via rustup automatic resolution.
+# The dtolnay/rust-toolchain action respects this file when present.
+# Update this version deliberately; verify cargo test + clippy pass first.
+channel = "1.95.0"
+targets = ["aarch64-apple-darwin", "x86_64-apple-darwin"]

@@ -51,24 +51,39 @@ window_ms = 100
 
 ## Install
 
-### Option A — Binary release (no build tools required)
-
-Download a release archive from the [Releases page](https://github.com/mitchelljphayes/switcheroo/releases), then:
+### Option 0 — Homebrew (recommended)
 
 ```bash
-xattr -d com.apple.quarantine switcheroo-vX.Y.Z-macos-universal.tar.gz
-tar -xzf switcheroo-vX.Y.Z-macos-universal.tar.gz
-./install-binary.sh
+brew tap mitchelljphayes/switcheroo
+brew install switcheroo
+brew services start switcheroo
 ```
 
-The binary installer installs the exact packaged universal `Switcheroo.app`
-(it does **not** run `cargo build`). It verifies the bundle identity
-(`com.mitchelljphayes.switcheroo`), runs `--version` as a smoke test, and
-checks the ad-hoc signature before installing. Releases are **unnotarized**;
-macOS Gatekeeper will warn — the `xattr -d` step above removes the quarantine
-flag so the installer can run.
+Homebrew builds from source via `cargo --release --locked`, so the
+binary is compiled locally and ad-hoc signed on your machine — no
+Developer ID, no notarization, no Gatekeeper friction. Grant
+Accessibility permission after first install (see below).
 
-### Option B — Build from source
+> **Note:** ad-hoc signing means Accessibility permission may need
+> re-granting after each `brew upgrade` (the binary is recompiled with
+> a new signature). A sample config is installed at
+> `$(brew --prefix)/etc/switcheroo/config.toml`; create or symlink your
+> active config at `~/.config/switcheroo/config.toml`.
+
+### Option A — Prebuilt binary archive (not yet a public distribution path)
+
+> **Not yet available for public distribution.** Prebuilt binary archives
+> are produced by CI for testing and rehearsal only. They are **unnotarized**
+> and signed with an **ad-hoc signature** (self-consistency only — this does
+> NOT authenticate the publisher). A co-hosted checksum file provides
+> **integrity** (detection of accidental corruption), not **authenticity**
+> (proof of publisher identity). Until a signed manifest or trusted
+> attestation is added, the **Homebrew source-build path (Option 0) is the
+> only public distribution method**. The binary archive will become a public
+> option only when artifact authenticity is implemented (signed tag +
+> attested manifest bound to the immutable commit).
+
+### Option B — Build from source (fallback)
 
 ```bash
 ./install.sh
@@ -133,7 +148,7 @@ Commands: View Remaps, Add Remap, Restart Switcheroo, View Logs, Edit Config.
 
 ### `[[modifier_remap]]`
 
-Kernel-level key remap applied via `hidutil` on startup. Equivalent to System Settings → Keyboard → Modifier Keys, but persistent. These are applied at the HID driver level (before any event tap sees them) and survive app restarts.
+Kernel-level key remap applied via `hidutil` on startup. Equivalent to System Settings → Keyboard → Modifier Keys, but persistent. These are applied at the HID driver level (before any event tap sees them) and survive app restarts. Mappings are automatically re-applied ~2 seconds after the system wakes from sleep (via an IOKit power notification); if reapplication fails, a warning is logged and the daemon keeps running.
 
 | Field | Values |
 |-------|--------|
@@ -209,7 +224,7 @@ Function: `f1`-`f12`
 
 ## How it works
 
-1. Applies `[[modifier_remap]]` rules via `hidutil` (kernel-level, instant)
+1. Applies `[[modifier_remap]]` rules via `hidutil` (kernel-level, instant) — on startup **and on wake from sleep** (via an IOKit power notification; debounced ~2 s)
 2. Registers a `CGEventTap` at `kCGHIDEventTap` (earliest interception point in userspace)
 3. Receives `keyDown`, `keyUp`, and `flagsChanged` events
 4. Runs them through the remap engine (tap-hold, conditional remaps, chords)
@@ -226,6 +241,15 @@ Both depend on `Karabiner-DriverKit-VirtualHIDDevice`, which:
 - Apple is pushing developers away from DriverKit virtual HID toward CoreHID
 
 Switcheroo uses `CGEventTap`, which has been stable since macOS 10.4 (2005) and is Apple's supported userspace event interception API. For kernel-level modifier remaps, it uses `hidutil`, which has been stable since macOS 10.12.
+
+## Icons
+
+The app bundle icon (`AppIcon.icns`) is generated from the tracked
+master `bundle/AppIcon-1024.png` (1024×1024). The packaging script
+(`scripts/package.sh`) produces all required sizes via `sips` +
+`iconutil` at build time. The Raycast extension icon
+(`raycast-extension/assets/command-icon.png`) is a 512×512 derivative
+for Raycast Store requirements.
 
 ## License
 

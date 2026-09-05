@@ -1,4 +1,12 @@
-import { Action, ActionPanel, Detail, Icon, showToast, Toast } from "@raycast/api";
+import {
+  Action,
+  ActionPanel,
+  Detail,
+  Icon,
+  showToast,
+  Toast,
+  Keyboard,
+} from "@raycast/api";
 import { useState, useEffect } from "react";
 import { readFileSync } from "fs";
 import { LOG_PATH } from "./lib/config";
@@ -35,20 +43,27 @@ export default function ViewLogs() {
           <Action
             icon={Icon.ArrowClockwise}
             title="Refresh Logs"
-            shortcut={{ modifiers: ["cmd"], key: "r" }}
+            shortcut={Keyboard.Shortcut.Common.Refresh}
             onAction={reload}
           />
           <Action
             icon={Icon.RotateAntiClockwise}
-             title="Restart Switcheroo"
+            title="Restart Switcheroo"
             shortcut={{ modifiers: ["cmd", "shift"], key: "r" }}
             onAction={async () => {
               try {
                 restartService();
-                await showToast({ style: Toast.Style.Success, title: "Switcheroo restarted" });
+                await showToast({
+                  style: Toast.Style.Success,
+                  title: "Switcheroo restarted",
+                });
                 setTimeout(reload, 2000);
               } catch (e) {
-                await showToast({ style: Toast.Style.Failure, title: "Failed to restart", message: String(e) });
+                await showToast({
+                  style: Toast.Style.Failure,
+                  title: "Failed to restart",
+                  message: String(e),
+                });
               }
             }}
           />

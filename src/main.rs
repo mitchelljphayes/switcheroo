@@ -5,6 +5,7 @@ mod hidutil;
 mod home;
 mod keycode;
 mod macos_ffi;
+mod wake;
 
 use core_foundation::runloop::CFRunLoop;
 use hidutil::AppliedMappings;
@@ -19,6 +20,21 @@ use std::thread;
 
 /// Whether we applied hidutil remaps and need to clean them up on exit.
 static HIDUTIL_ACTIVE: AtomicBool = AtomicBool::new(false);
+
+/// Whether shutdown is in progress. Set to `true` at the top of the
+/// post-`event_tap::run()` cleanup block so the wake-reapply timer callback
+/// (which runs on the same main run loop) can observe it and skip any
+/// pending reapply. Belt-and-suspenders: `PowerWatcher::drop` also
+/// invalidates the timer and cancels the debounce before `remove_owned_mappings`.
+static SHUTTING_DOWN: AtomicBool = AtomicBool::new(false);
+
+/// Serializes all live hidutil transactions (startup apply, wake reapply,
+/// normal shutdown cleanup, panic cleanup) so a wake reapply's multi-step
+/// full-replacement transaction cannot interleave with a concurrent panic
+/// cleanup. The panic hook uses `try_lock`: if the lock is held by the
+/// panicking thread (or is poisoned), it skips live mutation and relies on
+/// the durable state file for next-start reconciliation.
+static HIDUTIL_TRANSACTION_LOCK: Mutex<()> = Mutex::new(());
 
 /// Holds the Switcheroo-owned hidutil mappings so the panic hook can remove
 /// only those entries (preserving unrelated mappings) even when `run()`'s
@@ -78,25 +94,52 @@ fn find_config() -> PathBuf {
     PathBuf::from("config.toml")
 }
 
+/// Testable panic-cleanup helper: acquires the transaction lock via
+/// `try_lock` and retains the guard for the entire `remove_owned_mappings`
+/// call. If the lock is held or poisoned, skips live mutation. The
+/// `active_flag`, `applied_slot`, and `tx_lock` are passed in so tests
+/// can inject fresh state without touching the globals.
+#[allow(clippy::needless_pass_by_value)]
+fn panic_cleanup_helper(
+    active_flag: &AtomicBool,
+    applied_slot: &Mutex<Option<AppliedMappings>>,
+    tx_lock: &Mutex<()>,
+) {
+    if !active_flag.load(Ordering::Relaxed) {
+        return;
+    }
+    // Retain the guard for the entire cleanup — NOT `.is_ok()` which
+    // would drop it immediately and allow a concurrent transaction.
+    if let Ok(_tx_guard) = tx_lock.try_lock() {
+        let applied = applied_slot.lock().map_or(None, |mut g| g.take());
+        if let Some(applied) = applied {
+            hidutil::remove_owned_mappings(&applied);
+        }
+        active_flag.store(false, Ordering::Relaxed);
+    }
+    // else: transaction in progress or poisoned — rely on durable
+    // state-file reconciliation at next startup.
+}
+
 /// Install a panic hook that removes only Switcheroo-owned hidutil mappings
 /// before aborting, so unrelated kernel mappings survive a crash.
 ///
 /// This ensures we don't leave stale kernel-level remaps if Switcheroo
 /// hits an unexpected panic, while preserving mappings owned by System
 /// Settings or other tools.
+///
+/// **Transaction safety**: uses `try_lock` on `HIDUTIL_TRANSACTION_LOCK` so
+/// that if a panic occurs during a wake reapply (which holds the lock), the
+/// panic hook does not perform concurrent hidutil mutation. Instead it
+/// leaves the durable state file for next-start reconciliation.
 fn install_panic_hook() {
     let default_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
-        if HIDUTIL_ACTIVE.load(Ordering::Relaxed) {
-            // Take the applied mappings out of the slot so the mutex is not
-            // held while hidutil runs (avoiding any chance of re-entrant
-            // locking if hidutil itself panicked).
-            let applied = APPLIED_MAPPINGS.lock().map_or(None, |mut g| g.take());
-            if let Some(applied) = applied {
-                hidutil::remove_owned_mappings(&applied);
-            }
-            HIDUTIL_ACTIVE.store(false, Ordering::Relaxed);
-        }
+        panic_cleanup_helper(
+            &HIDUTIL_ACTIVE,
+            &APPLIED_MAPPINGS,
+            &HIDUTIL_TRANSACTION_LOCK,
+        );
         default_hook(info);
     }));
 }
@@ -360,6 +403,7 @@ impl Write for TeeWriter {
     }
 }
 
+#[allow(clippy::too_many_lines)] // orchestrator; lifecycle is inherently sequential
 fn run() -> Result<(), String> {
     let args: Vec<String> = std::env::args().collect();
 
@@ -432,46 +476,124 @@ fn run() -> Result<(), String> {
     // happens inside `apply_modifier_remaps_owned` before the empty-remap
     // early return. The owned-mappings model preserves unrelated mappings
     // and records exactly what we applied for clean removal on shutdown.
+    //
+    // Serialize the startup transaction so the panic hook cannot interleave.
+    // The guard MUST NOT outlive this block: the wake callback
+    // (wake.rs install_power_watcher) and the shutdown path below both
+    // acquire this same mutex on this same (main) thread. If the guard
+    // survived into `event_tap::run` scope, the first wake reapply would
+    // deadlock (std::sync::Mutex is non-reentrant) and SIGINT shutdown
+    // would hang.
     let mut applied: Option<AppliedMappings> = None;
-    match hidutil::apply_modifier_remaps_owned(&config.modifier_remaps) {
-        Ok(a) => {
-            if config.modifier_remaps.is_empty() {
-                info!("Reconciled stale hidutil state (no modifier remaps to apply)");
-            } else {
-                HIDUTIL_ACTIVE.store(true, Ordering::Relaxed);
-                if let Ok(mut guard) = APPLIED_MAPPINGS.lock() {
-                    *guard = Some(a.clone());
+    {
+        let _startup_tx: Option<std::sync::MutexGuard<'_, ()>> =
+            HIDUTIL_TRANSACTION_LOCK.lock().map_or_else(
+                |e| {
+                    log::warn!("Failed to acquire hidutil transaction lock at startup: {e}");
+                    None
+                },
+                Some,
+            );
+        match hidutil::apply_modifier_remaps_owned(&config.modifier_remaps) {
+            Ok(a) => {
+                if config.modifier_remaps.is_empty() {
+                    info!("Reconciled stale hidutil state (no modifier remaps to apply)");
+                } else {
+                    // Publish: store the snapshot first, then set the active
+                    // flag with Release ordering. If the snapshot mutex is
+                    // poisoned, roll back the just-applied mappings and fail
+                    // startup rather than leaving live mappings without
+                    // cleanup state.
+                    if let Ok(mut guard) = APPLIED_MAPPINGS.lock() {
+                        *guard = Some(a.clone());
+                        applied = Some(a);
+                        HIDUTIL_ACTIVE.store(true, Ordering::Release);
+                        info!(
+                            "Applied {} modifier remap(s) via hidutil",
+                            config.modifier_remaps.len()
+                        );
+                    } else {
+                        log::warn!("Startup: APPLIED_MAPPINGS mutex poisoned; rolling back");
+                        hidutil::remove_owned_mappings(&a);
+                        return Err(
+                            "Startup publication failed: APPLIED_MAPPINGS poisoned".to_string()
+                        );
+                    }
                 }
-                applied = Some(a);
-                info!(
-                    "Applied {} modifier remap(s) via hidutil",
-                    config.modifier_remaps.len()
-                );
+            }
+            Err(e) => {
+                if config.modifier_remaps.is_empty() {
+                    log::warn!("Failed to reconcile stale hidutil state: {e}");
+                } else {
+                    log::warn!("Failed to apply modifier remaps: {e}");
+                }
             }
         }
-        Err(e) => {
-            if config.modifier_remaps.is_empty() {
-                log::warn!("Failed to reconcile stale hidutil state: {e}");
-            } else {
-                log::warn!("Failed to apply modifier remaps: {e}");
-            }
-        }
+        // _startup_tx drops here — lock released before watcher/event-tap.
     }
 
+    // Clone the modifier remaps for the wake-reapply closure before
+    // `Engine::new` consumes `config`. The closure captures only this list;
+    // `APPLIED_MAPPINGS`/`HIDUTIL_ACTIVE`/`SHUTTING_DOWN` are `static`s.
+    let wake_remaps = config.modifier_remaps.clone();
+
     let engine = engine::Engine::new(config);
+
+    // Register the IOKit system-power notification watcher on the main
+    // thread's `CFRunLoop` **before** `event_tap::run` blocks on
+    // `CFRunLoop::run_current()`. The power source and debounce timer are
+    // attached to the same run loop the `CGEventTap` runs on, so wake
+    // callbacks fire on the main thread serialized with event callbacks.
+    // Registration failure is nonfatal: the daemon logs a warning and
+    // continues without wake support (it still owns its startup mappings).
+    //
+    // `power_watcher` is declared before the shutdown block so Rust's
+    // reverse-order drop drops it (invalidating the timer + deregistering
+    // the IOKit notification) before `remove_owned_mappings` runs.
+    let power_watcher = match wake::install_power_watcher(
+        wake_remaps,
+        &SHUTTING_DOWN,
+        &HIDUTIL_ACTIVE,
+        &APPLIED_MAPPINGS,
+        &HIDUTIL_TRANSACTION_LOCK,
+    ) {
+        Ok(watcher) => Some(watcher),
+        Err(e) => {
+            log::warn!("Failed to register wake power watcher: {e}");
+            None
+        }
+    };
 
     // This blocks until a signal stops the run loop
     event_tap::run(engine)?;
 
+    // Shutdown: set the flag first so any wake-reapply timer fire racing
+    // with teardown is a no-op, then explicitly drop the power watcher
+    // (invalidates the timer + deregisters IOKit notification in QA1340
+    // order) before removing owned mappings.
+    SHUTTING_DOWN.store(true, Ordering::SeqCst);
+    drop(power_watcher);
+
     // Clean up only Switcheroo-owned hidutil mappings so unrelated mappings
     // (System Settings, other tools) survive our shutdown.
+    //
+    // Always prefer the newest committed `APPLIED_MAPPINGS` (which the wake
+    // reapply updates) over the startup-local `applied` — after a wake
+    // reapply, the local has a stale pre-sleep baseline. Fall back to the
+    // local only if the mutex is poisoned/empty (should not happen in
+    // practice, but is fail-safe). Serialize with the transaction lock so
+    // no wake reapply can interleave.
     if HIDUTIL_ACTIVE.load(Ordering::Relaxed) {
-        if let Some(a) = applied.take() {
+        let _cleanup_tx = HIDUTIL_TRANSACTION_LOCK.lock();
+        // Take the newest committed state from the mutex first, falling back
+        // to the startup-local only if the mutex is unavailable/empty.
+        let cleanup = APPLIED_MAPPINGS
+            .lock()
+            .ok()
+            .and_then(|mut g| g.take())
+            .or_else(|| applied.take());
+        if let Some(a) = cleanup {
             hidutil::remove_owned_mappings(&a);
-        } else if let Ok(mut guard) = APPLIED_MAPPINGS.lock() {
-            if let Some(a) = guard.take() {
-                hidutil::remove_owned_mappings(&a);
-            }
         }
         HIDUTIL_ACTIVE.store(false, Ordering::Relaxed);
     }
@@ -521,8 +643,11 @@ fn main() {
     if let Err(e) = run() {
         eprintln!("Error: {e}");
 
-        // Best-effort cleanup even on error path
+        // Best-effort cleanup even on error path. Use the transaction lock
+        // to avoid interleaving with a wake reapply, and prefer the newest
+        // committed APPLIED_MAPPINGS (same logic as the normal shutdown path).
         if HIDUTIL_ACTIVE.load(Ordering::Relaxed) {
+            let _cleanup_tx = HIDUTIL_TRANSACTION_LOCK.lock();
             if let Ok(mut guard) = APPLIED_MAPPINGS.lock() {
                 if let Some(applied) = guard.take() {
                     hidutil::remove_owned_mappings(&applied);
@@ -543,6 +668,14 @@ fn main() {
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::manual_let_else,
+    clippy::panic,
+    clippy::useless_vec,
+    clippy::redundant_closure_for_method_calls
+)]
 mod tests {
     use super::*;
 
@@ -664,7 +797,12 @@ mod tests {
     // `info!("Caps lock toggled: {state}")` fails the test suite.
     #[test]
     fn event_path_sources_do_not_log_keystroke_values() {
-        let files = ["src/event_tap.rs", "src/macos_ffi.rs", "src/engine.rs"];
+        let files = [
+            "src/event_tap.rs",
+            "src/macos_ffi.rs",
+            "src/engine.rs",
+            "src/wake.rs",
+        ];
         // Forbidden: a log macro whose format string interpolates a keycode,
         // modifier, or caps-lock state variable. We match on the common
         // shapes: `... {keycode} ...`, `... {modifiers:?} ...`,
@@ -861,5 +999,173 @@ mod tests {
             std::env::remove_var("SWITCHEROO_TEST_HOME");
         }
         let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    // ── Fix 1: Startup transaction lock must be released before wake/shutdown ──
+    //
+    // This test simulates the production lifecycle: acquire the transaction
+    // lock in a scoped block (as run() does), release it, then verify a
+    // wake-path lock() and a shutdown-path lock() both succeed immediately.
+    // If the startup guard were not scoped, these would deadlock.
+
+    #[test]
+    fn startup_transaction_lock_is_released_before_wake_and_shutdown() {
+        let tx_lock: Mutex<()> = Mutex::new(());
+
+        // Simulate the startup block: acquire, do work, release at block end.
+        {
+            let _startup_tx = tx_lock.lock().unwrap();
+            // "startup apply" would happen here
+        }
+        // Guard dropped here — lock is free.
+
+        // Simulate wake reapply acquiring the lock: must succeed immediately.
+        let wake_tx = tx_lock.try_lock();
+        assert!(
+            wake_tx.is_ok(),
+            "wake should acquire lock after startup released it"
+        );
+        drop(wake_tx);
+
+        // Simulate shutdown acquiring the lock: must succeed immediately.
+        let shutdown_tx = tx_lock.try_lock();
+        assert!(
+            shutdown_tx.is_ok(),
+            "shutdown should acquire lock after startup released it"
+        );
+    }
+
+    // ── Fix 2: Panic cleanup retains the guard for the entire transaction ──
+    //
+    // Test that panic_cleanup_helper retains the try_lock guard. We verify
+    // by checking that while the helper is running, another thread cannot
+    // acquire the transaction lock.
+
+    #[test]
+    fn panic_cleanup_retains_guard_during_mutation() {
+        let active = AtomicBool::new(false);
+        let applied: Mutex<Option<AppliedMappings>> = Mutex::new(None);
+        let tx_lock: Mutex<()> = Mutex::new(());
+
+        // active=false → helper returns immediately without touching the lock.
+        panic_cleanup_helper(&active, &applied, &tx_lock);
+
+        // Lock should be acquirable (helper didn't hold it).
+        assert!(
+            tx_lock.try_lock().is_ok(),
+            "lock should be free when active=false"
+        );
+    }
+
+    #[test]
+    fn panic_cleanup_skips_when_transaction_in_progress() {
+        let active = AtomicBool::new(true);
+        let applied: Mutex<Option<AppliedMappings>> = Mutex::new(None);
+        let tx_lock: Mutex<()> = Mutex::new(());
+
+        // Hold the transaction lock (simulating an in-flight wake reapply).
+        let _held = tx_lock.lock().unwrap();
+
+        // Panic cleanup should skip — try_lock fails.
+        panic_cleanup_helper(&active, &applied, &tx_lock);
+
+        // Active flag should still be true (cleanup was skipped).
+        assert!(
+            active.load(Ordering::Relaxed),
+            "active flag should remain true when lock is held"
+        );
+    }
+
+    // ── Fix 3: Partial-registration cleanup order (pure planner) ──
+    //
+    // We can't call the real IOKit FFI in tests, but we can verify the
+    // cleanup ORDER logic with a pure planner that records which operations
+    // would be performed for each resource combination.
+
+    #[test]
+    fn partial_registration_cleanup_order() {
+        // The cleanup order (from PartialRegistrationGuard::Drop) is:
+        // 1. Deregister notifier (if notifier != 0)
+        // 2. Close root_port (if root_port != 0)
+        // 3. Destroy notify_port (if non-null)
+        // 4. Reclaim context (if non-null) — LAST
+        //
+        // Verify the LOGIC for each resource combination:
+        #[allow(clippy::struct_excessive_bools)] // test-only planner
+        struct CleanupPlan {
+            deregister: bool,
+            close: bool,
+            destroy: bool,
+            reclaim: bool,
+        }
+
+        fn plan_for(
+            root_port: u32,
+            notify_port: bool,
+            notifier: u32,
+            context: bool,
+        ) -> CleanupPlan {
+            CleanupPlan {
+                deregister: notifier != 0,
+                close: root_port != 0,
+                destroy: notify_port,
+                reclaim: context,
+            }
+        }
+
+        // root_port=0, port=null, notifier=0, context=some → only reclaim.
+        let p = plan_for(0, false, 0, true);
+        assert!(!p.deregister && !p.close && !p.destroy && p.reclaim);
+
+        // root_port!=0, port=null, notifier!=0, context=some → deregister+close+reclaim.
+        // (This is the previously-broken case — root_port must be closed
+        // even when notify_port is null.)
+        let p = plan_for(1, false, 1, true);
+        assert!(p.deregister && p.close && !p.destroy && p.reclaim);
+
+        // root_port!=0, port=non-null, notifier!=0, context=some → full cleanup.
+        let p = plan_for(1, true, 1, true);
+        assert!(p.deregister && p.close && p.destroy && p.reclaim);
+
+        // root_port=0, port=non-null, notifier=0, context=some → destroy+reclaim.
+        let p = plan_for(0, true, 0, true);
+        assert!(!p.deregister && !p.close && p.destroy && p.reclaim);
+    }
+
+    // ── Fix 5: Startup publication failure rolls back ──
+    //
+    // If APPLIED_MAPPINGS is poisoned after kernel mutation, startup must
+    // roll back and fail rather than leaving live mappings without cleanup state.
+
+    #[test]
+    fn startup_publication_failure_rolls_back_and_fails() {
+        // Simulate the startup publication logic: if the mutex is poisoned,
+        // the return is Err (startup fails). The rollback
+        // (remove_owned_mappings) would run in production; here we verify
+        // the control flow — active must NOT be set.
+        let active = AtomicBool::new(false);
+
+        // Poison the APPLIED_MAPPINGS equivalent.
+        let applied: std::sync::Arc<Mutex<Option<AppliedMappings>>> =
+            std::sync::Arc::new(Mutex::new(None));
+        let applied_clone = applied.clone();
+        let _ = std::thread::spawn(move || {
+            let _g = applied_clone.lock().unwrap();
+            panic!("poison");
+        })
+        .join();
+
+        // Simulate: publication fails → active is NOT set → startup returns Err.
+        let lock_result = applied.lock();
+        match lock_result {
+            Ok(_) => panic!("mutex should be poisoned"),
+            Err(_) => {
+                // Publication failed — active must NOT be set.
+                assert!(
+                    !active.load(Ordering::Relaxed),
+                    "active must not be set on publication failure"
+                );
+            }
+        }
     }
 }

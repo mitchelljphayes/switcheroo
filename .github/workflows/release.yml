@@ -6,25 +6,21 @@ name: Release
 # a GitHub Release. There is no `contents: write` job or token anywhere.
 #
 # Job graph: assert-trusted-dispatch → validate-tag → [fmt, clippy, test]
-#            → build (uploads artifacts via actions/upload-artifact)
+#            → build (calls scripts/package.sh, uploads artifacts)
+#
+# The validated 40-hex commit SHA is passed through ALL jobs via
+# `tag_commit` output. Every job checks out that exact SHA. The build
+# job passes it to package.sh which asserts HEAD == SHA and archives
+# from that SHA, never the mutable tag name.
 #
 # Manual GitHub Release publication is BLOCKED until these external
 # prerequisites are configured and verified (see RELEASE_SETUP.md):
 #   1. Protected `release` environment with ≥1 independent required reviewer.
-#   2. An environment-scoped `RELEASE_AUTHORIZATION` sentinel secret (NOT a
-#      repo/org secret — broader-scope secrets defeat the fail-closed gate).
-#   3. Strict `main` branch protection: PRs required, ≥1 approval,
-#      strict + up-to-date Format/Clippy/Test checks.
-#   4. A mandatory immutable `v*` tag ruleset restricting creation/update/
-#      deletion (preferably requiring signed tags).
+#   2. An environment-scoped `RELEASE_AUTHORIZATION` sentinel secret.
+#   3. Strict `main` branch protection.
+#   4. A mandatory immutable `v*` tag ruleset.
 #   5. Actions policy: allow only reviewed actions, require SHA pins.
-#   6. The exposed API credential incident is resolved (rotated, removed
-#      from inherited launchd state, attested).
-#
-# When all six are verified, a future automated publish job can be added
-# with a `contents: write` job gated on the environment + sentinel.
-# Until then, maintainers download the artifacts from the Actions run and
-# create the release manually after review.
+#   6. The exposed API credential incident is resolved.
 
 on:
   workflow_dispatch:
@@ -47,7 +43,7 @@ env:
 jobs:
   assert-trusted-dispatch:
     name: Assert trusted dispatch (main)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Reject unless dispatched from main
         env:
@@ -63,7 +59,7 @@ jobs:
   validate-tag:
     name: Validate tag (trusted & version-matched)
     needs: assert-trusted-dispatch
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       tag: ${{ steps.validate.outputs.tag }}
       version: ${{ steps.validate.outputs.version }}
@@ -97,19 +93,44 @@ jobs:
             exit 1
           fi
           TAG_VERSION="${TAG#v}"
-          CARGO_VERSION="$(git show "${TAG_COMMIT}:Cargo.toml" | grep -m1 '^version' | sed 's/version = "\(.*\)"/\1/')"
+          CARGO_VERSION="$(git show "${TAG_COMMIT}:Cargo.toml" | sed -n '/^\[package\]/,/^\[/p' | grep -m1 '^version' | sed 's/version = "\(.*\)"/\1/')"
           if [ "$TAG_VERSION" != "$CARGO_VERSION" ]; then
             echo "FAIL: tag '$TAG' (version '$TAG_VERSION') != Cargo.toml version '$CARGO_VERSION' at tag commit"
             exit 1
           fi
+          PLIST_SHORT="$(git show "${TAG_COMMIT}:bundle/Info.plist" | grep -A1 'CFBundleShortVersionString' | grep '<string>' | sed 's/.*<string>\(.*\)<\/string>.*/\1/' || true)"
+          PLIST_VER="$(git show "${TAG_COMMIT}:bundle/Info.plist" | grep -A1 '<key>CFBundleVersion</key>' | grep '<string>' | sed 's/.*<string>\(.*\)<\/string>.*/\1/' || true)"
+          if [ "$PLIST_SHORT" != "$TAG_VERSION" ]; then
+            echo "FAIL: bundle/Info.plist CFBundleShortVersionString='$PLIST_SHORT' != tag version '$TAG_VERSION'"
+            exit 1
+          fi
+          if [ "$PLIST_VER" != "$TAG_VERSION" ]; then
+            echo "FAIL: bundle/Info.plist CFBundleVersion='$PLIST_VER' != tag version '$TAG_VERSION'"
+            exit 1
+          fi
+          CHANGELOG_VER="$(git show "${TAG_COMMIT}:CHANGELOG.md" | grep -m1 -E '^## \[' | sed -E 's/^## \[([0-9.]+)\].*/\1/' || true)"
+          if [ -z "$CHANGELOG_VER" ]; then
+            echo "FAIL: CHANGELOG.md has no version entry at tag commit"
+            exit 1
+          fi
+          if [ "$CHANGELOG_VER" != "$TAG_VERSION" ]; then
+            echo "FAIL: CHANGELOG.md top entry version='$CHANGELOG_VER' != tag version '$TAG_VERSION'"
+            exit 1
+          fi
+          # Validate rust-toolchain.toml exists at tag commit
+          if ! git show "${TAG_COMMIT}:rust-toolchain.toml" >/dev/null 2>&1; then
+            echo "FAIL: rust-toolchain.toml not found at tag commit — toolchain must be pinned"
+            exit 1
+          fi
           echo "OK: tag $TAG ($TAG_VERSION) @ $TAG_COMMIT is merged to main and version-matched"
+          echo "OK: Info.plist=$PLIST_SHORT, CHANGELOG=$CHANGELOG_VER, rust-toolchain.toml present"
           printf 'tag=%s\n' "$TAG" >> "$GITHUB_OUTPUT"
           printf 'version=%s\n' "$TAG_VERSION" >> "$GITHUB_OUTPUT"
 
   fmt:
     name: Format
     needs: validate-tag
-    runs-on: macos-latest
+    runs-on: macos-14
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -123,7 +144,7 @@ jobs:
   clippy:
     name: Clippy
     needs: validate-tag
-    runs-on: macos-latest
+    runs-on: macos-14
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -132,24 +153,38 @@ jobs:
       - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # v1
         with:
           components: clippy
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-clippy-${{ hashFiles('**/Cargo.lock') }}
       - run: cargo clippy --locked -- -D warnings
 
   test:
     name: Test
     needs: validate-tag
-    runs-on: macos-latest
+    runs-on: macos-14
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           ref: ${{ needs.validate-tag.outputs.tag_commit }}
       - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # v1
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-test-${{ hashFiles('**/Cargo.lock') }}
       - run: cargo test --locked
 
   build:
     name: Build + package + checksum
     needs: [validate-tag, fmt, clippy, test]
-    runs-on: macos-latest
+    runs-on: macos-14
     permissions:
       contents: read
     steps:
@@ -163,25 +198,29 @@ jobs:
         with:
           targets: aarch64-apple-darwin,x86_64-apple-darwin
 
-      - name: Build universal binary
+      - name: Build + package via scripts/package.sh (release mode)
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+          TAG_COMMIT: ${{ needs.validate-tag.outputs.tag_commit }}
         run: |
           set -euo pipefail
-          cargo build --release --locked --target aarch64-apple-darwin
-          cargo build --release --locked --target x86_64-apple-darwin
-          lipo -create -output switcheroo-universal \
-            target/aarch64-apple-darwin/release/switcheroo \
-            target/x86_64-apple-darwin/release/switcheroo
-          file switcheroo-universal | grep -q "universal binary"
+          # Release mode: pass tag + commit-sha. package.sh will:
+          #   - assert HEAD == TAG_COMMIT
+          #   - export commit into a private source tree
+          #   - build hermetically under env -i
+          #   - archive from git archive <COMMIT_SHA> (not the exported tree)
+          #   - require both arch builds (no native fallback)
+          #   - create a fresh-private mktemp output directory
+          # The unique output dir is printed to stdout; capture it.
+          OUTPUT_DIR=$(./scripts/package.sh --tag "$INPUT_TAG" --commit-sha "$TAG_COMMIT" --out-parent ./dist-parent 2>&1 | grep '^    Out-dir:' | sed 's/^    Out-dir:  //')
+          echo "OUTPUT_DIR=$OUTPUT_DIR" >> "$GITHUB_ENV"
 
-      - name: Ad-hoc sign universal binary
-        run: codesign --force --sign - switcheroo-universal
-
-      - name: Verify --version on universal binary (exact match)
+      - name: Verify binary --version (exact match)
         env:
           TAG_VERSION: ${{ needs.validate-tag.outputs.version }}
         run: |
           set -euo pipefail
-          OUT="$(./switcheroo-universal --version)"
+          OUT="$("${OUTPUT_DIR}/switcheroo-universal" --version)"
           EXPECTED="switcheroo ${TAG_VERSION}"
           if [ "$OUT" != "$EXPECTED" ]; then
             echo "FAIL: binary --version '$OUT' != expected '$EXPECTED'"
@@ -189,65 +228,13 @@ jobs:
           fi
           echo "OK: binary reports $OUT"
 
-      - name: Assemble Switcheroo.app
-        env:
-          TAG_VERSION: ${{ needs.validate-tag.outputs.version }}
-        run: |
-          set -euo pipefail
-          mkdir -p Switcheroo.app/Contents/MacOS
-          mkdir -p Switcheroo.app/Contents/Resources
-          cp switcheroo-universal Switcheroo.app/Contents/MacOS/switcheroo
-          cp bundle/Info.plist Switcheroo.app/Contents/Info.plist
-          /usr/bin/plutil -replace CFBundleVersion -string "$TAG_VERSION" Switcheroo.app/Contents/Info.plist
-          /usr/bin/plutil -replace CFBundleShortVersionString -string "$TAG_VERSION" Switcheroo.app/Contents/Info.plist
-          /usr/bin/plutil -lint Switcheroo.app/Contents/Info.plist
-          codesign --force --sign - Switcheroo.app
-
-      - name: Build source archive
-        env:
-          INPUT_TAG: ${{ inputs.tag }}
-          TAG_COMMIT: ${{ needs.validate-tag.outputs.tag_commit }}
-        run: |
-          set -euo pipefail
-          TAG="$INPUT_TAG"
-          git archive --format=tar.gz --prefix="switcheroo-${TAG}/" \
-            --output "switcheroo-${TAG}-source.tar.gz" "$TAG_COMMIT"
-
-      - name: Build binary archive (includes scripts/lib.sh)
-        env:
-          INPUT_TAG: ${{ inputs.tag }}
-        run: |
-          set -euo pipefail
-          TAG="$INPUT_TAG"
-          tar -czf "switcheroo-${TAG}-macos-universal.tar.gz" \
-            Switcheroo.app \
-            com.mitchelljphayes.switcheroo.plist \
-            install-binary.sh \
-            uninstall.sh \
-            scripts/lib.sh \
-            config.toml \
-            README.md \
-            LICENSE
-
-      - name: Generate and verify SHA-256 checksums
-        env:
-          INPUT_TAG: ${{ inputs.tag }}
-        run: |
-          set -euo pipefail
-          TAG="$INPUT_TAG"
-          shasum -a 256 \
-            "switcheroo-${TAG}-source.tar.gz" \
-            "switcheroo-${TAG}-macos-universal.tar.gz" \
-            > checksums-sha256.txt
-          cat checksums-sha256.txt
-          shasum -a 256 -c checksums-sha256.txt
-
-      - name: Upload build artifacts
+      - name: Upload validation artifacts (PRIVATE — not for public release)
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: release-artifacts
+          name: private-validation-artifacts
           path: |
-            switcheroo-${{ inputs.tag }}-source.tar.gz
-            switcheroo-${{ inputs.tag }}-macos-universal.tar.gz
-            checksums-sha256.txt
+            ${{ env.OUTPUT_DIR }}/switcheroo-${{ inputs.tag }}-source.tar.gz
+            ${{ env.OUTPUT_DIR }}/switcheroo-${{ inputs.tag }}-macos-universal.tar.gz
+            ${{ env.OUTPUT_DIR }}/checksums-sha256.txt
+            ${{ env.OUTPUT_DIR }}/release-manifest.txt
           retention-days: 7

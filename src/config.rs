@@ -71,7 +71,7 @@ pub struct Config {
     pub chords: Vec<Chord>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ModifierRemap {
     pub from: String,
     pub from_hid: u64,
@@ -242,6 +242,7 @@ pub(crate) fn parse_modifier(name: &str) -> Result<Modifier, String> {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
 
