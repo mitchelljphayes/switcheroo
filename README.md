@@ -51,20 +51,66 @@ window_ms = 100
 
 ## Install
 
+### Option 0 — Homebrew (recommended)
+
+```bash
+brew tap mitchelljphayes/switcheroo
+brew install switcheroo
+brew services start switcheroo
+```
+
+Homebrew builds from source via `cargo --release --locked`, so the
+binary is compiled locally and ad-hoc signed on your machine — no
+Developer ID, no notarization, no Gatekeeper friction. Grant
+Accessibility permission after first install (see below).
+
+> **Note:** ad-hoc signing means Accessibility permission may need
+> re-granting after each `brew upgrade` (the binary is recompiled with
+> a new signature). A sample config is installed at
+> `$(brew --prefix)/etc/switcheroo/config.toml`; create or symlink your
+> active config at `~/.config/switcheroo/config.toml`.
+
+### Option A — Prebuilt binary archive (not yet a public distribution path)
+
+> **Not yet available for public distribution.** Prebuilt binary archives
+> are produced by CI for testing and rehearsal only. They are **unnotarized**
+> and signed with an **ad-hoc signature** (self-consistency only — this does
+> NOT authenticate the publisher). A co-hosted checksum file provides
+> **integrity** (detection of accidental corruption), not **authenticity**
+> (proof of publisher identity). Until a signed manifest or trusted
+> attestation is added, the **Homebrew source-build path (Option 0) is the
+> only public distribution method**. The binary archive will become a public
+> option only when artifact authenticity is implemented (signed tag +
+> attested manifest bound to the immutable commit).
+
+### Option B — Build from source (fallback)
+
 ```bash
 ./install.sh
 ```
 
 This will:
-1. Build the release binary
-2. Install app bundle to `~/.local/bin/Switcheroo.app`
-3. Code sign with your local certificate (preserves Accessibility permission across rebuilds)
-4. Copy config to `~/.config/switcheroo/config.toml`
-5. Install and start a LaunchAgent
+1. Build the release binary with `cargo`
+2. Stage + ad-hoc sign the `.app` bundle and atomically swap it into `~/.local/bin/Switcheroo.app`
+3. Copy config to `~/.config/switcheroo/config.toml`
+4. Install and start a LaunchAgent, migrating from the old `com.local.switcheroo` label if present
+
+Both installers:
+- Stop any existing Switcheroo agent before overwriting the bundle
+- Validate `~`, paths, and plist ownership/permissions (rejecting hostile symlinks)
+- Migrate the old `com.local.switcheroo` label safely (only if its plist points at Switcheroo)
+- Verify the agent is registered after bootstrap, rolling back on failure
 
 **Important**: Grant Accessibility access after first install:
 - System Settings → Privacy & Security → Accessibility
 - Add `~/.local/bin/Switcheroo.app`
+
+> **Bundle-id migration (v0.1.x):** The LaunchAgent identity changed from
+> `com.local.switcheroo` to `com.mitchelljphayes.switcheroo`. An existing
+> Accessibility grant is tied to the old bundle id and must be **re-issued
+> once** after upgrading. `install.sh` detects and cleanly stops the old
+> label; `uninstall.sh` cleans up both. Unrelated `hidutil` mappings are
+> preserved across the migration.
 
 ## Usage
 
@@ -77,9 +123,9 @@ switcheroo /path/to/config.toml        # explicit config path
 RUST_LOG=debug switcheroo
 
 # As a service (managed by install.sh)
-launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.local.switcheroo.plist
-launchctl bootout gui/$(id -u)/com.local.switcheroo
-tail -f /tmp/switcheroo.err
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.mitchelljphayes.switcheroo.plist
+launchctl bootout gui/$(id -u)/com.mitchelljphayes.switcheroo
+tail -f ~/Library/Logs/com.mitchelljphayes.switcheroo/daemon.err
 ```
 
 ## Raycast Extension
@@ -102,7 +148,7 @@ Commands: View Remaps, Add Remap, Restart Switcheroo, View Logs, Edit Config.
 
 ### `[[modifier_remap]]`
 
-Kernel-level key remap applied via `hidutil` on startup. Equivalent to System Settings → Keyboard → Modifier Keys, but persistent. These are applied at the HID driver level (before any event tap sees them) and survive app restarts.
+Kernel-level key remap applied via `hidutil` on startup. Equivalent to System Settings → Keyboard → Modifier Keys, but persistent. These are applied at the HID driver level (before any event tap sees them) and survive app restarts. Mappings are automatically re-applied ~2 seconds after the system wakes from sleep (via an IOKit power notification); if reapplication fails, a warning is logged and the daemon keeps running.
 
 | Field | Values |
 |-------|--------|
@@ -178,7 +224,7 @@ Function: `f1`-`f12`
 
 ## How it works
 
-1. Applies `[[modifier_remap]]` rules via `hidutil` (kernel-level, instant)
+1. Applies `[[modifier_remap]]` rules via `hidutil` (kernel-level, instant) — on startup **and on wake from sleep** (via an IOKit power notification; debounced ~2 s)
 2. Registers a `CGEventTap` at `kCGHIDEventTap` (earliest interception point in userspace)
 3. Receives `keyDown`, `keyUp`, and `flagsChanged` events
 4. Runs them through the remap engine (tap-hold, conditional remaps, chords)
@@ -195,6 +241,15 @@ Both depend on `Karabiner-DriverKit-VirtualHIDDevice`, which:
 - Apple is pushing developers away from DriverKit virtual HID toward CoreHID
 
 Switcheroo uses `CGEventTap`, which has been stable since macOS 10.4 (2005) and is Apple's supported userspace event interception API. For kernel-level modifier remaps, it uses `hidutil`, which has been stable since macOS 10.12.
+
+## Icons
+
+The app bundle icon (`AppIcon.icns`) is generated from the tracked
+master `bundle/AppIcon-1024.png` (1024×1024). The packaging script
+(`scripts/package.sh`) produces all required sizes via `sips` +
+`iconutil` at build time. The Raycast extension icon
+(`raycast-extension/assets/command-icon.png`) is a 512×512 derivative
+for Raycast Store requirements.
 
 ## License
 

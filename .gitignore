@@ -12,3 +12,10 @@ raycast-extension/build/
 
 # Internal plans
 plans/
+
+# Packaging build output
+/dist/
+/dist-parent/
+
+# Rendered Homebrew formula (template is tracked; rendered rb is a local artifact)
+/packaging/homebrew/switcheroo.rb

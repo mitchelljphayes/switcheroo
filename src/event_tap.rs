@@ -7,7 +7,7 @@ use core_graphics::event::{
     CGEventType, EventField,
 };
 use core_graphics::event_source::{CGEventSource, CGEventSourceStateID};
-use log::{debug, info, warn};
+use log::{info, warn};
 use std::cell::RefCell;
 
 // `CGEvent` flag masks
@@ -33,14 +33,16 @@ fn post_key_tap(proxy: core_graphics::event::CGEventTapProxy, keycode: KeyCode) 
             key_down.set_flags(CGEventFlags::empty());
             key_down.post_from_tap(proxy);
         }
-        Err(()) => log::error!("Failed to create synthetic key-down for {keycode}"),
+        // Omit the keycode from the log to avoid leaking keystroke content
+        // via error output (security review F9).
+        Err(()) => log::error!("Failed to create synthetic key-down event"),
     }
     match CGEvent::new_keyboard_event(source, keycode.0, false) {
         Ok(key_up) => {
             key_up.set_flags(CGEventFlags::empty());
             key_up.post_from_tap(proxy);
         }
-        Err(()) => log::error!("Failed to create synthetic key-up for {keycode}"),
+        Err(()) => log::error!("Failed to create synthetic key-up event"),
     }
 }
 
@@ -79,18 +81,9 @@ pub fn run(engine: Engine) -> Result<(), String> {
             let mut engine = engine_cell.borrow_mut();
 
             let action = match event_type {
-                CGEventType::KeyDown => {
-                    debug!("KeyDown: {keycode} modifiers: {modifiers:?}");
-                    engine.on_key_down(keycode, modifiers)
-                }
-                CGEventType::KeyUp => {
-                    debug!("KeyUp: {keycode} modifiers: {modifiers:?}");
-                    engine.on_key_up(keycode, modifiers)
-                }
-                CGEventType::FlagsChanged => {
-                    debug!("FlagsChanged: {keycode} modifiers: {modifiers:?}");
-                    engine.on_flags_changed(keycode, modifiers)
-                }
+                CGEventType::KeyDown => engine.on_key_down(keycode, modifiers),
+                CGEventType::KeyUp => engine.on_key_up(keycode, modifiers),
+                CGEventType::FlagsChanged => engine.on_flags_changed(keycode, modifiers),
                 _ => Action::Pass,
             };
 
@@ -125,7 +118,6 @@ pub fn run(engine: Engine) -> Result<(), String> {
                 Action::EmitTap(tap_keycode) => {
                     // Suppress the original event (modifier key-up) and post
                     // a synthetic key tap instead
-                    debug!("EmitTap: posting synthetic {tap_keycode} tap");
                     post_key_tap(proxy, tap_keycode);
                     // Still pass through the original flagsChanged so the modifier
                     // state updates correctly in the system

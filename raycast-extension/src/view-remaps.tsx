@@ -8,6 +8,7 @@ import {
   List,
   showToast,
   Toast,
+  Keyboard,
 } from "@raycast/api";
 import { useState, useCallback } from "react";
 import { getRemapItems, deleteRemap, RemapItem, RemapType } from "./lib/config";
@@ -43,7 +44,11 @@ export default function ViewRemaps() {
     try {
       setItems(getRemapItems());
     } catch (e) {
-      showToast({ style: Toast.Style.Failure, title: "Failed to read config", message: String(e) });
+      showToast({
+        style: Toast.Style.Failure,
+        title: "Failed to read config",
+        message: String(e),
+      });
     }
   }, []);
 
@@ -59,18 +64,33 @@ export default function ViewRemaps() {
       deleteRemap(item.id);
       restartService();
       reload();
-      await showToast({ style: Toast.Style.Success, title: "Deleted", message: item.title });
+      await showToast({
+        style: Toast.Style.Success,
+        title: "Deleted",
+        message: item.title,
+      });
     } catch (e) {
-      await showToast({ style: Toast.Style.Failure, title: "Failed to delete", message: String(e) });
+      await showToast({
+        style: Toast.Style.Failure,
+        title: "Failed to delete",
+        message: String(e),
+      });
     }
   }
 
   async function handleRestart() {
     try {
       restartService();
-      await showToast({ style: Toast.Style.Success, title: "Switcheroo restarted" });
+      await showToast({
+        style: Toast.Style.Success,
+        title: "Switcheroo restarted",
+      });
     } catch (e) {
-      await showToast({ style: Toast.Style.Failure, title: "Failed to restart", message: String(e) });
+      await showToast({
+        style: Toast.Style.Failure,
+        title: "Failed to restart",
+        message: String(e),
+      });
     }
   }
 
@@ -82,7 +102,13 @@ export default function ViewRemaps() {
     grouped.set(item.type, list);
   }
 
-  const sectionOrder: RemapType[] = ["modifier_remap", "remap", "tap_hold", "conditional_remap", "chord"];
+  const sectionOrder: RemapType[] = [
+    "modifier_remap",
+    "remap",
+    "tap_hold",
+    "conditional_remap",
+    "chord",
+  ];
 
   return (
     <List searchBarPlaceholder="Search remaps...">
@@ -93,7 +119,10 @@ export default function ViewRemaps() {
             {(grouped.get(type) ?? []).map((item) => (
               <List.Item
                 key={item.id}
-                icon={{ source: TYPE_ICONS[item.type].icon, tintColor: TYPE_ICONS[item.type].color }}
+                icon={{
+                  source: TYPE_ICONS[item.type].icon,
+                  tintColor: TYPE_ICONS[item.type].color,
+                }}
                 title={item.title}
                 subtitle={item.subtitle}
                 actions={
@@ -107,7 +136,7 @@ export default function ViewRemaps() {
                       <Action.Push
                         icon={Icon.Plus}
                         title="Add Remap"
-                        shortcut={{ modifiers: ["cmd"], key: "n" }}
+                        shortcut={Keyboard.Shortcut.Common.New}
                         target={<AddRemapForm onAdd={reload} />}
                       />
                       <Action
@@ -122,14 +151,14 @@ export default function ViewRemaps() {
                       <Action
                         icon={Icon.ArrowClockwise}
                         title="Restart Switcheroo"
-                        shortcut={{ modifiers: ["cmd"], key: "r" }}
+                        shortcut={Keyboard.Shortcut.Common.Refresh}
                         onAction={handleRestart}
                       />
                       <Action.Open
                         icon={Icon.TextDocument}
                         title="Edit Config in Editor"
                         target={`~/.config/switcheroo/config.toml`}
-                        shortcut={{ modifiers: ["cmd"], key: "e" }}
+                        shortcut={Keyboard.Shortcut.Common.Edit}
                       />
                     </ActionPanel.Section>
                   </ActionPanel>

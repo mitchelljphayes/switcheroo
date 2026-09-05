@@ -1,0 +1,245 @@
+name: Release
+
+# ── Read-only tagged-release BUILD pipeline ───────────────────────────
+#
+# This workflow builds and validates release artifacts but does NOT publish
+# a GitHub Release. There is no `contents: write` job or token anywhere.
+#
+# Job graph: assert-trusted-dispatch → validate-tag → [fmt, clippy, test]
+#            → build (calls scripts/package.sh, uploads artifacts)
+#
+# The validated 40-hex commit SHA is passed through ALL jobs via
+# `tag_commit` output. Every job checks out that exact SHA. The build
+# job passes it to package.sh which asserts HEAD == SHA and archives
+# from that SHA, never the mutable tag name.
+#
+# Manual GitHub Release publication is BLOCKED until these external
+# prerequisites are configured and verified (see RELEASE_SETUP.md):
+#   1. Protected `release` environment with ≥1 independent required reviewer.
+#   2. An environment-scoped `RELEASE_AUTHORIZATION` sentinel secret.
+#   3. Strict `main` branch protection.
+#   4. A mandatory immutable `v*` tag ruleset.
+#   5. Actions policy: allow only reviewed actions, require SHA pins.
+#   6. The exposed API credential incident is resolved.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to build, e.g. v0.1.0 (must be a real v* tag whose commit is merged to main)"
+        required: true
+        type: string
+
+permissions:
+  contents: read # workflow-wide: no write token anywhere
+
+concurrency:
+  group: release-${{ inputs.tag }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  assert-trusted-dispatch:
+    name: Assert trusted dispatch (main)
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Reject unless dispatched from main
+        env:
+          GITHUB_REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "FAIL: release workflow must be dispatched from refs/heads/main (got $GITHUB_REF)"
+            exit 1
+          fi
+          echo "OK: dispatched from main"
+
+  validate-tag:
+    name: Validate tag (trusted & version-matched)
+    needs: assert-trusted-dispatch
+    runs-on: ubuntu-24.04
+    outputs:
+      tag: ${{ steps.validate.outputs.tag }}
+      version: ${{ steps.validate.outputs.version }}
+      tag_commit: ${{ steps.validate.outputs.tag_commit }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+          ref: main
+
+      - name: Validate tag is v*, merged to main, and version-matched
+        id: validate
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          TAG="$INPUT_TAG"
+          if ! printf '%s' "$TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "FAIL: tag '$TAG' is not a semver 'vX.Y.Z' form"
+            exit 1
+          fi
+          if ! git rev-parse -q --verify "refs/tags/${TAG}" >/dev/null; then
+            echo "FAIL: tag '$TAG' does not exist in this repository"
+            exit 1
+          fi
+          TAG_COMMIT="$(git rev-parse "refs/tags/${TAG}^{commit}")"
+          printf 'tag_commit=%s\n' "$TAG_COMMIT" >> "$GITHUB_OUTPUT"
+          if ! git merge-base --is-ancestor "$TAG_COMMIT" origin/main; then
+            echo "FAIL: tag '$TAG' commit $TAG_COMMIT is NOT an ancestor of main"
+            exit 1
+          fi
+          TAG_VERSION="${TAG#v}"
+          CARGO_VERSION="$(git show "${TAG_COMMIT}:Cargo.toml" | sed -n '/^\[package\]/,/^\[/p' | grep -m1 '^version' | sed 's/version = "\(.*\)"/\1/')"
+          if [ "$TAG_VERSION" != "$CARGO_VERSION" ]; then
+            echo "FAIL: tag '$TAG' (version '$TAG_VERSION') != Cargo.toml version '$CARGO_VERSION' at tag commit"
+            exit 1
+          fi
+          PLIST_SHORT="$(git show "${TAG_COMMIT}:bundle/Info.plist" | grep -A1 'CFBundleShortVersionString' | grep '<string>' | sed 's/.*<string>\(.*\)<\/string>.*/\1/' || true)"
+          PLIST_VER="$(git show "${TAG_COMMIT}:bundle/Info.plist" | grep -A1 '<key>CFBundleVersion</key>' | grep '<string>' | sed 's/.*<string>\(.*\)<\/string>.*/\1/' || true)"
+          if [ "$PLIST_SHORT" != "$TAG_VERSION" ]; then
+            echo "FAIL: bundle/Info.plist CFBundleShortVersionString='$PLIST_SHORT' != tag version '$TAG_VERSION'"
+            exit 1
+          fi
+          if [ "$PLIST_VER" != "$TAG_VERSION" ]; then
+            echo "FAIL: bundle/Info.plist CFBundleVersion='$PLIST_VER' != tag version '$TAG_VERSION'"
+            exit 1
+          fi
+          CHANGELOG_VER="$(git show "${TAG_COMMIT}:CHANGELOG.md" | grep -m1 -E '^## \[' | sed -E 's/^## \[([0-9.]+)\].*/\1/' || true)"
+          if [ -z "$CHANGELOG_VER" ]; then
+            echo "FAIL: CHANGELOG.md has no version entry at tag commit"
+            exit 1
+          fi
+          if [ "$CHANGELOG_VER" != "$TAG_VERSION" ]; then
+            echo "FAIL: CHANGELOG.md top entry version='$CHANGELOG_VER' != tag version '$TAG_VERSION'"
+            exit 1
+          fi
+          # Validate rust-toolchain.toml exists at tag commit
+          if ! git show "${TAG_COMMIT}:rust-toolchain.toml" >/dev/null 2>&1; then
+            echo "FAIL: rust-toolchain.toml not found at tag commit — toolchain must be pinned"
+            exit 1
+          fi
+          echo "OK: tag $TAG ($TAG_VERSION) @ $TAG_COMMIT is merged to main and version-matched"
+          echo "OK: Info.plist=$PLIST_SHORT, CHANGELOG=$CHANGELOG_VER, rust-toolchain.toml present"
+          printf 'tag=%s\n' "$TAG" >> "$GITHUB_OUTPUT"
+          printf 'version=%s\n' "$TAG_VERSION" >> "$GITHUB_OUTPUT"
+
+  fmt:
+    name: Format
+    needs: validate-tag
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ needs.validate-tag.outputs.tag_commit }}
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # v1
+        with:
+          components: rustfmt
+          toolchain: 1.95.0
+      - run: cargo fmt --check
+
+  clippy:
+    name: Clippy
+    needs: validate-tag
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ needs.validate-tag.outputs.tag_commit }}
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # v1
+        with:
+          components: clippy
+          toolchain: 1.95.0
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-clippy-${{ hashFiles('**/Cargo.lock') }}
+      - run: cargo clippy --locked -- -D warnings
+
+  test:
+    name: Test
+    needs: validate-tag
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ needs.validate-tag.outputs.tag_commit }}
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # v1
+        with:
+          toolchain: 1.95.0
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-test-${{ hashFiles('**/Cargo.lock') }}
+      - run: cargo test --locked
+
+  build:
+    name: Build + package + checksum
+    needs: [validate-tag, fmt, clippy, test]
+    runs-on: macos-14
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ needs.validate-tag.outputs.tag_commit }}
+          fetch-depth: 0
+
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # v1
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+          toolchain: 1.95.0
+
+      - name: Build + package via scripts/package.sh (release mode)
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+          TAG_COMMIT: ${{ needs.validate-tag.outputs.tag_commit }}
+        run: |
+          set -euo pipefail
+          # Release mode: pass tag + commit-sha. package.sh will:
+          #   - assert HEAD == TAG_COMMIT
+          #   - export commit into a private source tree
+          #   - build hermetically under env -i
+          #   - archive from git archive <COMMIT_SHA> (not the exported tree)
+          #   - require both arch builds (no native fallback)
+          #   - create a fresh-private mktemp output directory
+          # The unique output dir is printed to stdout; capture it.
+          OUTPUT_DIR=$(./scripts/package.sh --tag "$INPUT_TAG" --commit-sha "$TAG_COMMIT" --out-parent ./dist-parent 2>&1 | grep '^    Out-dir:' | sed 's/^    Out-dir:  //')
+          echo "OUTPUT_DIR=$OUTPUT_DIR" >> "$GITHUB_ENV"
+
+      - name: Verify binary --version (exact match)
+        env:
+          TAG_VERSION: ${{ needs.validate-tag.outputs.version }}
+        run: |
+          set -euo pipefail
+          OUT="$("${OUTPUT_DIR}/switcheroo-universal" --version)"
+          EXPECTED="switcheroo ${TAG_VERSION}"
+          if [ "$OUT" != "$EXPECTED" ]; then
+            echo "FAIL: binary --version '$OUT' != expected '$EXPECTED'"
+            exit 1
+          fi
+          echo "OK: binary reports $OUT"
+
+      - name: Upload validation artifacts (PRIVATE — not for public release)
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: private-validation-artifacts
+          path: |
+            ${{ env.OUTPUT_DIR }}/switcheroo-${{ inputs.tag }}-source.tar.gz
+            ${{ env.OUTPUT_DIR }}/switcheroo-${{ inputs.tag }}-macos-universal.tar.gz
+            ${{ env.OUTPUT_DIR }}/checksums-sha256.txt
+            ${{ env.OUTPUT_DIR }}/release-manifest.txt
+          retention-days: 7

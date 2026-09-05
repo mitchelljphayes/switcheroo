@@ -13,8 +13,32 @@ export const MODIFIER_KEYS = [
 ] as const;
 
 export const LETTER_KEYS = [
-  "a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m",
-  "n", "o", "p", "q", "r", "s", "t", "u", "v", "w", "x", "y", "z",
+  "a",
+  "b",
+  "c",
+  "d",
+  "e",
+  "f",
+  "g",
+  "h",
+  "i",
+  "j",
+  "k",
+  "l",
+  "m",
+  "n",
+  "o",
+  "p",
+  "q",
+  "r",
+  "s",
+  "t",
+  "u",
+  "v",
+  "w",
+  "x",
+  "y",
+  "z",
 ] as const;
 
 export const ARROW_KEYS = [
@@ -34,8 +58,18 @@ export const SPECIAL_KEYS = [
 ] as const;
 
 export const FUNCTION_KEYS = [
-  "f1", "f2", "f3", "f4", "f5", "f6",
-  "f7", "f8", "f9", "f10", "f11", "f12",
+  "f1",
+  "f2",
+  "f3",
+  "f4",
+  "f5",
+  "f6",
+  "f7",
+  "f8",
+  "f9",
+  "f10",
+  "f11",
+  "f12",
 ] as const;
 
 export const ALL_KEYS = [

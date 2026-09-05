@@ -3,9 +3,20 @@ import { homedir } from "os";
 import { join } from "path";
 import * as TOML from "smol-toml";
 
-export const CONFIG_PATH = join(homedir(), ".config", "switcheroo", "config.toml");
-export const LOG_PATH = "/tmp/switcheroo.err";
-export const PLIST_NAME = "com.local.switcheroo";
+export const CONFIG_PATH = join(
+  homedir(),
+  ".config",
+  "switcheroo",
+  "config.toml",
+);
+export const LOG_PATH = join(
+  homedir(),
+  "Library",
+  "Logs",
+  "com.mitchelljphayes.switcheroo",
+  "daemon.err",
+);
+export const PLIST_NAME = "com.mitchelljphayes.switcheroo";
 
 // --- Raw TOML types (what's in the file) ---
 
@@ -48,17 +59,30 @@ export interface RawConfig {
 
 // --- Parsed config with IDs for list management ---
 
-export type RemapType = "modifier_remap" | "remap" | "conditional_remap" | "tap_hold" | "chord";
+export type RemapType =
+  | "modifier_remap"
+  | "remap"
+  | "conditional_remap"
+  | "tap_hold"
+  | "chord";
 
 export interface RemapItem {
   id: string;
   type: RemapType;
   title: string;
   subtitle: string;
-  raw: RawModifierRemap | RawRemap | RawConditionalRemap | RawTapHold | RawChord;
+  raw:
+    | RawModifierRemap
+    | RawRemap
+    | RawConditionalRemap
+    | RawTapHold
+    | RawChord;
 }
 
-function formatModifierRemap(r: RawModifierRemap): { title: string; subtitle: string } {
+function formatModifierRemap(r: RawModifierRemap): {
+  title: string;
+  subtitle: string;
+} {
   return {
     title: `${r.from} → ${r.to}`,
     subtitle: "Modifier Remap",
@@ -72,7 +96,10 @@ function formatRemap(r: RawRemap): { title: string; subtitle: string } {
   };
 }
 
-function formatConditionalRemap(r: RawConditionalRemap): { title: string; subtitle: string } {
+function formatConditionalRemap(r: RawConditionalRemap): {
+  title: string;
+  subtitle: string;
+} {
   return {
     title: `${r.modifier} + ${r.from} → ${r.to}`,
     subtitle: "Conditional Remap",
@@ -103,7 +130,9 @@ export function writeConfig(config: RawConfig): void {
   const lines: string[] = ["# switcheroo configuration\n"];
 
   if (config.modifier_remap && config.modifier_remap.length > 0) {
-    lines.push("# Kernel-level modifier remaps (applied via hidutil on startup)");
+    lines.push(
+      "# Kernel-level modifier remaps (applied via hidutil on startup)",
+    );
     for (const r of config.modifier_remap) {
       lines.push("[[modifier_remap]]");
       lines.push(`from = "${r.from}"`);
@@ -165,7 +194,12 @@ export function getRemapItems(): RemapItem[] {
 
   (config.modifier_remap ?? []).forEach((r, i) => {
     const fmt = formatModifierRemap(r);
-    items.push({ id: `modifier_remap:${i}`, type: "modifier_remap", ...fmt, raw: r });
+    items.push({
+      id: `modifier_remap:${i}`,
+      type: "modifier_remap",
+      ...fmt,
+      raw: r,
+    });
   });
 
   (config.remap ?? []).forEach((r, i) => {
@@ -180,7 +214,12 @@ export function getRemapItems(): RemapItem[] {
 
   (config.conditional_remap ?? []).forEach((r, i) => {
     const fmt = formatConditionalRemap(r);
-    items.push({ id: `conditional_remap:${i}`, type: "conditional_remap", ...fmt, raw: r });
+    items.push({
+      id: `conditional_remap:${i}`,
+      type: "conditional_remap",
+      ...fmt,
+      raw: r,
+    });
   });
 
   (config.chord ?? []).forEach((r, i) => {
@@ -219,21 +258,34 @@ export function addModifierRemap(from: string, to: string): void {
   writeConfig(config);
 }
 
-export function addConditionalRemap(modifier: string, from: string, to: string): void {
+export function addConditionalRemap(
+  modifier: string,
+  from: string,
+  to: string,
+): void {
   const config = readConfig();
   if (!config.conditional_remap) config.conditional_remap = [];
   config.conditional_remap.push({ modifier, from, to });
   writeConfig(config);
 }
 
-export function addTapHold(key: string, tap: string, hold: string, timeout_ms: number): void {
+export function addTapHold(
+  key: string,
+  tap: string,
+  hold: string,
+  timeout_ms: number,
+): void {
   const config = readConfig();
   if (!config.tap_hold) config.tap_hold = [];
   config.tap_hold.push({ key, tap, hold, timeout_ms });
   writeConfig(config);
 }
 
-export function addChord(keys: string[], emit: string, window_ms: number): void {
+export function addChord(
+  keys: string[],
+  emit: string,
+  window_ms: number,
+): void {
   const config = readConfig();
   if (!config.chord) config.chord = [];
   config.chord.push({ keys, emit, window_ms });
