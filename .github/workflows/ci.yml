@@ -121,6 +121,8 @@ jobs:
             scripts/package.sh
             scripts/lib.sh
             scripts/version-sync.sh
+            scripts/generate_icns.sh
+            scripts/test_icon_regression.sh
             install.sh
             install-binary.sh
             uninstall.sh
@@ -134,6 +136,16 @@ jobs:
         with:
           persist-credentials: false
       - run: ./scripts/test_lib.sh
+
+  icon-regression:
+    name: Icon sandbox regression
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: ./scripts/generate_icns.sh
+      - run: ./scripts/test_icon_regression.sh
 
   package-dry-run:
     name: Package dry-run (rehearsal)

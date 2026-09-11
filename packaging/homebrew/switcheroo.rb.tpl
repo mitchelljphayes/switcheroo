@@ -22,7 +22,11 @@ __REHEARSAL_MARKER__
 #   - does NOT call install.sh / install-binary.sh
 #   - does NOT write ~/.local/bin or ~/Library/LaunchAgents
 #   - installs sample config under Homebrew-managed etc/ only
-#   - ad-hoc codesign (locally compiled, no Developer ID)
+#   - copies pre-built bundle/AppIcon.icns (iconutil cannot run in
+#     the Homebrew build sandbox; no sips/iconutil/Dir.mktmpdir at
+#     install time)
+#   - explicit service name "homebrew.mxcl.switcheroo" for compatibility
+#     with the published tap
 #   - caveats document Accessibility + config location + re-grant note
 #   - test block runs --version
 # ─────────────────────────────────────────────────────────────────────
@@ -48,25 +52,17 @@ class Switcheroo < Formula
     cp bin / "switcheroo", app / "Contents/MacOS/switcheroo"
     cp "bundle/Info.plist", app / "Contents/Info.plist"
 
-    # Generate AppIcon.icns from the tracked PNG master
-    # (bundle/AppIcon-1024.png — same path the packager uses).
-    icon_master = buildpath / "bundle/AppIcon-1024.png"
-    if File.exist?(icon_master)
-      tmpdir = Dir.mktmpdir("switcheroo-icon")
-      iconset = File.join(tmpdir, "AppIcon.iconset")
-      Dir.mkdir(iconset)
-      sizes = [16, 32, 64, 128, 256, 512]
-      sizes.each do |s|
-        system "/usr/bin/sips", "-z", s.to_s, s.to_s, icon_master.to_s,
-               "--out", File.join(iconset, "icon_#{s}x#{s}.png"),
-               out: File::NULL, err: File::NULL
-        system "/usr/bin/sips", "-z", (s * 2).to_s, (s * 2).to_s, icon_master.to_s,
-               "--out", File.join(iconset, "icon_#{s}x#{s}@2x.png"),
-               out: File::NULL, err: File::NULL
-      end
-      system "/usr/bin/iconutil", "-c", "icns", iconset,
-             "-o", app / "Contents/Resources/AppIcon.icns"
-      remove_entry tmpdir
+    # Install the pre-built AppIcon.icns from the source archive.
+    #
+    # iconutil -c icns cannot run inside Homebrew's build sandbox
+    # (seatbelt profile denies a mach-lookup iconutil needs), so the
+    # .icns is generated OUTSIDE the sandbox by scripts/generate_icns.sh
+    # and shipped as a tracked asset. This also removes the sips/iconutil
+    # `out:`/`err:` kwargs that are not accepted by Formula#system's
+    # Sorbet sig and raised TypeError under HOMEBREW_SORBET_RUNTIME=1.
+    icns_source = buildpath / "bundle/AppIcon.icns"
+    if File.exist?(icns_source)
+      cp icns_source, app / "Contents/Resources/AppIcon.icns"
     end
 
     # Ad-hoc sign the locally-compiled bundle (no Developer ID needed).
@@ -79,6 +75,7 @@ class Switcheroo < Formula
   end
 
   service do
+    name macos: "homebrew.mxcl.switcheroo"
     run [opt_prefix / "Switcheroo.app/Contents/MacOS/switcheroo"]
     keep_alive true
     run_at_load true

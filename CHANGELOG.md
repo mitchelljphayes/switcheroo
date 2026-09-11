@@ -5,6 +5,28 @@ All notable changes to Switcheroo are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.1] - 2026-09-12
+
+### Fixed
+
+- Homebrew Formula icon installation: `iconutil -c icns` fails under
+  Homebrew's build sandbox (seatbelt profile denies the mach-lookup
+  iconutil needs, producing "Invalid Iconset" even on valid iconsets).
+  Replaced runtime `sips`/`iconutil`/`Dir.mktmpdir` icon generation
+  with a pre-built `bundle/AppIcon.icns` copied at install time.
+  The `.icns` is generated outside the sandbox by
+  `scripts/generate_icns.sh` from the tracked 1024×1024 master PNG
+  using the 10 standard iconutil-recognized sizes (16, 32, 128, 256,
+  512 + @2x each).
+- Removed unsupported `out: File::NULL, err: File::NULL` kwargs from
+  Formula `system` calls. `Formula#system`'s Sorbet sig does not
+  accept `out:`/`err:` keyword arguments; under
+  `HOMEBREW_SORBET_RUNTIME=1` (e.g., `brew test`) these raised
+  `TypeError: Expected type T.any(Integer, Pathname, String, Symbol),
+  got type Hash`.
+- Added explicit `name macos: "homebrew.mxcl.switcheroo"` to the Formula
+  `service do` block for compatibility with the published tap.
+
 ## [0.1.0] - 2026-09-02
 
 ### Added
