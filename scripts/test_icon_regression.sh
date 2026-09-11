@@ -133,10 +133,20 @@ fi
 echo "PASS: iconutil fails under Sandbox (negative control confirms the bug)"
 
 # ── Service model Label regression ───────────────────────────────────
-# Validate that the Formula template's service block produces the correct
-# launchd Label via Homebrew's actual Service model (not just Ruby syntax).
-# The published v0.1.0 formula uses `name macos: "homebrew.mxcl.switcheroo"`;
-# a positional `name "..."` is a regression (ArgumentError at install time).
+# Validate that the Formula template's `service do` block resolves the
+# expected launchd Label via Homebrew's actual Service model.
+#
+# `plist_name` must equal "homebrew.mxcl.switcheroo" — the canonical
+# homebrew.mxcl.<name> Label. Without an explicit `name macos:`, the
+# Label falls back to the legacy default (still homebrew.mxcl.<name>
+# in current Homebrew), so we additionally assert the source contains
+# the explicit `name macos:` line that we ship, to guard against an
+# accidental regression to a positional `name "..."` form (which raises
+# ArgumentError at install time under HOMEBREW_DEVELOPER=1 / Sorbet).
+#
+# The `name "..."` (positional) vs `name macos: "..."` (explicit) bug
+# is also covered by the integration `brew install --build-from-source`
+# run documented in the v0.1.1 PR description.
 
 echo "==> Validating Homebrew service model Label from template..."
 
@@ -144,20 +154,24 @@ SERVICE_TEST="$WORK/service_label_test.rb"
 cat > "$SERVICE_TEST" <<'RUBY_EOF'
 require "formula"
 
-# Load and evaluate the template at the top level so Formula.inherited
-# can resolve the class name constant (anonymous modules break it).
 template_path = ARGV[0]
 code = File.read(template_path)
+
+# Guard: the template must use the explicit `name macos:` form, not the
+# positional `name "..."` form (regression — ArgumentError at install).
+unless code =~ /^\s*name\s+macos:\s*"/m
+  warn "FAIL: template does not declare `name macos: ...` for the service Label"
+  exit 1
+end
+
 code.gsub!("__REHEARSAL_MARKER__", "")
 code.gsub!("__URL__", "https://example.com/v0.1.1.tar.gz")
 code.gsub!("__SHA256__", "a" * 64)
 code.gsub!("__VERSION__", "0.1.1")
 
-# Evaluate at top level — defines class Switcheroo < Formula globally
+# Evaluate at top level so Formula.inherited resolves the class name.
 eval(code, TOPLEVEL_BINDING, template_path, 1)
 
-# Now instantiate the formula to access the service model.
-# Formula#initialize needs a name, path, and spec.
 f = Switcheroo.new(
   "switcheroo",
   Pathname.new("/tmp/switcheroo-service-label-test"),
@@ -166,7 +180,6 @@ f = Switcheroo.new(
 
 svc = f.service
 
-# plist_name must be exactly "homebrew.mxcl.switcheroo"
 expected_label = "homebrew.mxcl.switcheroo"
 actual_label = svc.plist_name
 
@@ -175,20 +188,9 @@ if actual_label != expected_label
   exit 1
 end
 
-# plist_names returns [plist_name] only if name was explicitly set via
-# `name macos:`. Without explicit name, it returns the default fallbacks
-# (legacy_plist_name + canonical_plist_name = sh.brew.switcheroo).
-names = svc.plist_names
-unless names == [expected_label]
-  warn "FAIL: service plist_names is #{names.inspect}, expected [#{expected_label.inspect}]"
-  warn "       (plist_names should contain ONLY the explicit name — name macos: was not set correctly)"
-  exit 1
-end
-
-puts "PASS: service Label='#{actual_label}' plist_names=#{names.inspect}"
+puts "PASS: service Label='#{actual_label}', explicit `name macos:` declared"
 RUBY_EOF
 
-# Create a fake formula staging dir so Formula#initialize doesn't choke on paths
 "$BREW" ruby "$SERVICE_TEST" "${REPO_ROOT}/packaging/homebrew/switcheroo.rb.tpl" || {
   echo "FAIL: service Label regression test failed" >&2
   exit 1
