@@ -481,36 +481,43 @@ printf '%s' "$BIN_VERSION" | $SW_USR_GREP -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' \
 echo "    OK: switcheroo $BIN_VERSION"
 
 # ── Generate AppIcon.icns ─────────────────────────────────────────────
-echo "==> Generating AppIcon.icns from bundle/AppIcon-1024.png"
-_TEMP_ICONSET="$($SW_USR_MKTEMP -d -t switcheroo.iconset.XXXXXX)"
-ICONSET_DIR="${_TEMP_ICONSET}/AppIcon.iconset"
-$SW_BIN_MKDIR -p "$ICONSET_DIR"
-
-generate_icon() {
-  local size="$1" out_name="$2"
-  $SW_USR_SIPS -z "$size" "$size" "$ICON_MASTER" --out "$ICONSET_DIR/$out_name" >/dev/null 2>&1 \
-    || SW_ERR "sips failed for $out_name"
-}
-
-generate_icon 16   "icon_16x16.png"
-generate_icon 32   "icon_16x16@2x.png"
-generate_icon 32   "icon_32x32.png"
-generate_icon 64   "icon_32x32@2x.png"
-generate_icon 64   "icon_64x64.png"
-generate_icon 128  "icon_64x64@2x.png"
-generate_icon 128  "icon_128x128.png"
-generate_icon 256  "icon_128x128@2x.png"
-generate_icon 256  "icon_256x256.png"
-generate_icon 512  "icon_256x256@2x.png"
-generate_icon 512  "icon_512x512.png"
-generate_icon 1024 "icon_512x512@2x.png"
-
+# Prefer the tracked bundle/AppIcon.icns (same asset the Homebrew Formula
+# copies) to eliminate iconset drift between packaging paths. Fall back to
+# runtime generation only if the tracked asset is missing.
 ICNS_OUTPUT="$OUT_DIR/AppIcon.icns"
-$SW_USR_ICONUTIL -c icns "$ICONSET_DIR" -o "$ICNS_OUTPUT" \
-  || SW_ERR "iconutil -c icns failed"
-[ -f "$ICNS_OUTPUT" ] || SW_ERR "iconutil did not produce AppIcon.icns"
-$SW_BIN_RM -rf "$_TEMP_ICONSET"
-_TEMP_ICONSET=""
+TRACKED_ICNS="${BUILD_ROOT}/bundle/AppIcon.icns"
+if [ -f "$TRACKED_ICNS" ] && [ ! -L "$TRACKED_ICNS" ]; then
+  echo "==> Using tracked bundle/AppIcon.icns"
+  $SW_BIN_CP "$TRACKED_ICNS" "$ICNS_OUTPUT"
+else
+  echo "==> Generating AppIcon.icns from bundle/AppIcon-1024.png (tracked icns missing)"
+  _TEMP_ICONSET="$($SW_USR_MKTEMP -d -t switcheroo.iconset.XXXXXX)"
+  ICONSET_DIR="${_TEMP_ICONSET}/AppIcon.iconset"
+  $SW_BIN_MKDIR -p "$ICONSET_DIR"
+
+  generate_icon() {
+    local size="$1" out_name="$2"
+    $SW_USR_SIPS -z "$size" "$size" "$ICON_MASTER" --out "$ICONSET_DIR/$out_name" >/dev/null 2>&1 \
+      || SW_ERR "sips failed for $out_name"
+  }
+
+  generate_icon 16   "icon_16x16.png"
+  generate_icon 32   "icon_16x16@2x.png"
+  generate_icon 32   "icon_32x32.png"
+  generate_icon 64   "icon_32x32@2x.png"
+  generate_icon 128  "icon_128x128.png"
+  generate_icon 256  "icon_128x128@2x.png"
+  generate_icon 256  "icon_256x256.png"
+  generate_icon 512  "icon_256x256@2x.png"
+  generate_icon 512  "icon_512x512.png"
+  generate_icon 1024 "icon_512x512@2x.png"
+
+  $SW_USR_ICONUTIL -c icns "$ICONSET_DIR" -o "$ICNS_OUTPUT" \
+    || SW_ERR "iconutil -c icns failed"
+  $SW_BIN_RM -rf "$_TEMP_ICONSET"
+  _TEMP_ICONSET=""
+fi
+[ -f "$ICNS_OUTPUT" ] || SW_ERR "AppIcon.icns was not produced"
 
 # ── Assemble Switcheroo.app ───────────────────────────────────────────
 echo "==> Assembling Switcheroo.app"
