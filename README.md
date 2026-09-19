@@ -2,106 +2,170 @@
 
 Lightweight macOS keyboard remapper using `CGEventTap`. No kernel extensions, no DriverKit, no Karabiner dependency.
 
-## What it does
+Switcheroo has two parts:
 
-Switcheroo intercepts keyboard events at the Quartz event level and applies remapping rules defined in a TOML config. It handles the stateful remaps that macOS can't do natively (conditional modifier remaps, tap-hold, chords).
+- **The daemon** performs the keyboard remapping. Install it with Homebrew and run it as a background service.
+- **The optional Raycast extension** lets you view and edit remaps. It does not install or replace the daemon. [Store submission is awaiting review](https://github.com/raycast/extensions/pull/31064).
 
-Switcheroo also applies kernel-level modifier remaps via `hidutil` on startup, so settings like Caps Lock → Ctrl persist across reboots without depending on System Settings.
-
-## Default config
-
-```toml
-# Kernel-level modifier remaps (applied via hidutil on startup)
-[[modifier_remap]]
-from = "caps_lock"
-to = "left_ctrl"
-
-# Simple key remaps (unconditional, applied via CGEventTap)
-# [[remap]]
-# from = "a"
-# to = "b"
-
-# Ctrl + HJKL → Arrow keys (vim-style navigation everywhere)
-[[conditional_remap]]
-modifier = "ctrl"
-from = "h"
-to = "left_arrow"
-
-[[conditional_remap]]
-modifier = "ctrl"
-from = "j"
-to = "down_arrow"
-
-[[conditional_remap]]
-modifier = "ctrl"
-from = "k"
-to = "up_arrow"
-
-[[conditional_remap]]
-modifier = "ctrl"
-from = "l"
-to = "right_arrow"
-
-# Both shifts pressed together → Caps Lock
-[[chord]]
-keys = ["left_shift", "right_shift"]
-emit = "caps_lock"
-window_ms = 100
-```
+You can use Switcheroo without Raycast by editing `~/.config/switcheroo/config.toml` directly. It supports modifier remaps, key swaps, tap-hold, conditional remaps, and chords. Modifier mappings are reapplied at startup and after wake; they do not persist across reboot by themselves.
 
 ## Install
 
-### Option 0 — Homebrew (recommended)
+### Homebrew quick start (recommended)
+
+Requires macOS and [Homebrew](https://brew.sh/). Homebrew builds the daemon from source, so the first installation may take a few minutes. No Apple Developer account is needed.
+
+**Already using a standalone installation?** Follow the [migration instructions](https://github.com/mitchelljphayes/homebrew-switcheroo#migrating-from-the-standalone-install-caution) before starting the Homebrew service. Do not run both providers at once; `brew services stop` does not stop a standalone LaunchAgent.
+
+#### 1. Install the daemon
 
 ```bash
 brew tap mitchelljphayes/switcheroo
 brew install switcheroo
-brew services start switcheroo
 ```
 
-Homebrew builds from source via `cargo --release --locked`, so the
-binary is compiled locally and ad-hoc signed on your machine — no
-Developer ID, no notarization, no Gatekeeper friction. Grant
-Accessibility permission after first install (see below).
+Do not start the service until you have configured it and granted Accessibility permission.
 
-> **Note:** ad-hoc signing means Accessibility permission may need
-> re-granting after each `brew upgrade` (the binary is recompiled with
-> a new signature). A sample config is installed at
-> `$(brew --prefix)/etc/switcheroo/config.toml`; create or symlink your
-> active config at `~/.config/switcheroo/config.toml`.
+#### 2. Create your config
 
-### Option A — Prebuilt binary archive (not yet a public distribution path)
-
-> **Not yet available for public distribution.** Prebuilt binary archives
-> are produced by CI for testing and rehearsal only. They are **unnotarized**
-> and signed with an **ad-hoc signature** (self-consistency only — this does
-> NOT authenticate the publisher). A co-hosted checksum file provides
-> **integrity** (detection of accidental corruption), not **authenticity**
-> (proof of publisher identity). Until a signed manifest or trusted
-> attestation is added, the **Homebrew source-build path (Option 0) is the
-> only public distribution method**. The binary archive will become a public
-> option only when artifact authenticity is implemented (signed tag +
-> attested manifest bound to the immutable commit).
-
-### Option B — Build from source (fallback)
+Copy the sample only if you do not already have a config file or symlink:
 
 ```bash
+mkdir -p "$HOME/.config/switcheroo"
+config="$HOME/.config/switcheroo/config.toml"
+if [ ! -e "$config" ] && [ ! -L "$config" ]; then
+  cp "$(brew --prefix)/etc/switcheroo/config.toml" "$config"
+fi
+open -e "$config"
+```
+
+Review the mappings before starting the daemon: the sample changes keyboard behavior. See the [sample config](config.toml) and [config reference](#config-reference). An existing config is left untouched.
+
+#### 3. Grant Accessibility permission
+
+1. Print the installed app path:
+
+   ```bash
+   echo "$(brew --prefix switcheroo)/Switcheroo.app"
+   ```
+
+2. Open **System Settings → Privacy & Security → Accessibility**.
+3. Click **+**, use **⌘⇧G** to navigate to the printed path, and add `Switcheroo.app`.
+4. Enable its permission. Grant access to **Switcheroo**, not just Raycast.
+
+The locally built app is ad-hoc signed. After an upgrade or rebuild, you may need to remove and re-add its Accessibility entry if remapping stops working.
+
+#### 4. Start and check the service
+
+```bash
+brew services start switcheroo
+brew services info switcheroo
+switcheroo --version
+```
+
+The service runs in the background and starts at login. Test a mapping from your config. If it does not work, check [troubleshooting](#troubleshooting) below.
+
+#### 5. Optional: add the Raycast UI
+
+Homebrew does **not** install the Raycast extension. See [Raycast Extension](#raycast-extension) for its current availability and local installation instructions.
+
+## Usage
+
+For a Homebrew installation:
+
+```bash
+brew services info switcheroo     # check service status
+brew services restart switcheroo  # apply manually edited config
+brew services stop switcheroo     # stop remapping and disable start-at-login
+brew services start switcheroo    # start again and enable start-at-login
+```
+
+Keep the daemon running while using remaps. A normal shutdown removes Switcheroo-owned modifier mappings and restores the previous mappings where safe.
+
+### Raycast Extension
+
+**Store status:** the extension is [submitted for review](https://github.com/raycast/extensions/pull/31064), not yet available as a Store install. You can use the daemon now; Raycast is optional.
+
+The extension provides **View Remaps**, **Add Remap**, **Restart Switcheroo**, **View Logs**, and **Edit Config**. For a local installation while review is pending, follow the [extension guide](raycast-extension/README.md#local-install-before-store-approval). The latest Store candidate is on the submission branch, which may differ from the extension source in this repository.
+
+After the initial local build/import, stop `npm run dev` with **Ctrl+C**. The built commands remain available; the watcher is only needed while developing. Stopping it does not stop the remapping daemon.
+
+Once the Store version is approved, install it from Raycast and remove any duplicate local development copy in **Raycast Settings → Extensions**.
+
+### Upgrade
+
+```bash
+brew update
+brew upgrade switcheroo
+brew services restart switcheroo
+```
+
+Recheck Accessibility permission if needed. Your active config is separate from Homebrew's installed files; upgrades do not replace it.
+
+## Troubleshooting
+
+- **Installed, but keys are unchanged:** check `brew services info switcheroo`, the active config path, and Accessibility permission for the Homebrew app path printed above.
+- **Changed the TOML manually:** restart the service to load it. In the submitted Raycast extension, add/edit/delete actions attempt a restart after saving and report restart failures separately.
+- **Raycast says “Missing executable”:** this is an extension build/import error, not necessarily a missing daemon. Rebuild the local extension using its [local-install instructions](raycast-extension/README.md#local-install-before-store-approval).
+- **Two sets of Raycast commands:** stop extra `npm run dev` watchers and check for duplicate local extension registrations before removing anything.
+- **Old standalone install detected:** use the [migration guide](https://github.com/mitchelljphayes/homebrew-switcheroo#migrating-from-the-standalone-install-caution). Do not run a second daemon or use blanket `hidutil` clearing commands.
+
+Daemon logs are under `~/Library/Logs/com.mitchelljphayes.switcheroo/`:
+
+```bash
+tail -f "$HOME/Library/Logs/com.mitchelljphayes.switcheroo/daemon.err"
+```
+
+For Homebrew launchd stdout/stderr paths and more service commands, see the [tap README](https://github.com/mitchelljphayes/homebrew-switcheroo#readme).
+
+## Uninstall
+
+### Homebrew installation
+
+Stop the service before removing the executable:
+
+```bash
+brew services stop switcheroo
+brew uninstall switcheroo
+brew untap mitchelljphayes/switcheroo
+```
+
+Keep `~/.config/switcheroo/config.toml` if you may reinstall. If the daemon was hard-killed or cleanup reports an error, seek recovery guidance before deleting its binary or recovery state; a normal uninstall is not a guarantee of crash recovery.
+
+### Standalone installation
+
+From the source checkout used to build the current standalone version:
+
+```bash
+cargo build --release --locked
+./uninstall.sh
+```
+
+The build supplies the recovery helper required by the uninstaller. It handles the current and legacy standalone labels and preserves your config. Do not use `uninstall.sh` to remove a Homebrew installation.
+
+## Build from source (standalone alternative)
+
+Use this instead of Homebrew, not alongside it. Requires Git, Rust via [rustup](https://rustup.rs/), and the Xcode Command Line Tools. Install the latter with `xcode-select --install` if needed.
+
+```bash
+git clone --branch v0.1.1 --depth 1 https://github.com/mitchelljphayes/switcheroo.git
+cd switcheroo
 ./install.sh
 ```
 
 This will:
 1. Build the release binary with `cargo`
 2. Stage + ad-hoc sign the `.app` bundle and atomically swap it into `~/.local/bin/Switcheroo.app`
-3. Copy config to `~/.config/switcheroo/config.toml`
+3. Create a sample config at `~/.config/switcheroo/config.toml` if one does not exist
 4. Install and start a LaunchAgent, migrating from the old `com.local.switcheroo` label if present
 
-Both installers:
+The standalone installer:
 - Stop any existing Switcheroo agent before overwriting the bundle
 - Validate `~`, paths, and plist ownership/permissions (rejecting hostile symlinks)
 - Migrate the old `com.local.switcheroo` label safely (only if its plist points at Switcheroo)
 - Verify the agent is registered after bootstrap, rolling back on failure
 
-**Important**: Grant Accessibility access after first install:
+**Standalone permission path:** the installer starts its LaunchAgent; after first install, grant Accessibility access:
 - System Settings → Privacy & Security → Accessibility
 - Add `~/.local/bin/Switcheroo.app`
 
@@ -112,43 +176,17 @@ Both installers:
 > label; `uninstall.sh` cleans up both. Unrelated `hidutil` mappings are
 > preserved across the migration.
 
-## Usage
+The source installer rejects some symlinked installation/config paths. If you manage config through dotfiles symlinks, prefer the Homebrew path rather than removing or overwriting those symlinks to satisfy the installer.
 
-```bash
-# Run directly (for testing)
-switcheroo                              # uses ~/.config/switcheroo/config.toml
-switcheroo /path/to/config.toml        # explicit config path
+### Prebuilt archives
 
-# With debug logging
-RUST_LOG=debug switcheroo
-
-# As a service (managed by install.sh)
-launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.mitchelljphayes.switcheroo.plist
-launchctl bootout gui/$(id -u)/com.mitchelljphayes.switcheroo
-tail -f ~/Library/Logs/com.mitchelljphayes.switcheroo/daemon.err
-```
-
-## Raycast Extension
-
-A Raycast extension is included for managing the config via UI:
-
-```bash
-cd raycast-extension && npm install && npm run dev
-```
-
-Commands: View Remaps, Add Remap, Restart Switcheroo, View Logs, Edit Config.
-
-## Uninstall
-
-```bash
-./uninstall.sh
-```
+[Public releases](https://github.com/mitchelljphayes/switcheroo/releases) currently distribute source. Prebuilt app archives produced by CI are validation artifacts, **not a supported public install path**. Ad-hoc signatures and co-hosted checksums do not authenticate the publisher; signed or attested binary distribution is separate future work.
 
 ## Config reference
 
 ### `[[modifier_remap]]`
 
-Kernel-level key remap applied via `hidutil` on startup. Equivalent to System Settings → Keyboard → Modifier Keys, but persistent. These are applied at the HID driver level (before any event tap sees them) and survive app restarts. Mappings are automatically re-applied ~2 seconds after the system wakes from sleep (via an IOKit power notification); if reapplication fails, a warning is logged and the daemon keeps running.
+Kernel-level key remap applied via `hidutil` on startup, before the event tap processes keys. Mappings are automatically re-applied about two seconds after wake. They are not inherently persistent across reboot: the login service reapplies them. Normal shutdown removes owned mappings and restores prior mappings where safe. If wake reapplication fails, a warning is logged and the daemon keeps running.
 
 | Field | Values |
 |-------|--------|
@@ -169,7 +207,7 @@ Use this for straightforward key swaps that aren't modifier-specific.
 **Examples:**
 
 ```toml
-# Swap semicolon and colon (remap ; to =)
+# Map semicolon to equal (; to =)
 [[remap]]
 from = "semicolon"
 to = "equal"
@@ -181,7 +219,7 @@ from = "caps_lock"
 to = "escape"
 ```
 
-> **`[[remap]]` vs `[[modifier_remap]]`**: Use `modifier_remap` for modifier key swaps (e.g. Caps Lock → Ctrl) — it's applied at the kernel level via `hidutil`, so it works even if Switcheroo isn't running. Use `remap` for everything else, or when you want remaps that can be toggled by stopping/starting Switcheroo.
+> **`[[remap]]` vs `[[modifier_remap]]`**: Use `modifier_remap` for modifier changes such as Caps Lock → Ctrl at the HID level. Use `remap` for unconditional key changes handled by the event tap. Keep Switcheroo running for normal operation; stopping it normally also cleans up its owned HID mappings.
 
 ### `[[tap_hold]]`
 
@@ -244,12 +282,9 @@ Switcheroo uses `CGEventTap`, which has been stable since macOS 10.4 (2005) and 
 
 ## Icons
 
-The app bundle icon (`AppIcon.icns`) is generated from the tracked
-master `bundle/AppIcon-1024.png` (1024×1024). The packaging script
-(`scripts/package.sh`) produces all required sizes via `sips` +
-`iconutil` at build time. The Raycast extension icon
-(`raycast-extension/assets/command-icon.png`) is a 512×512 derivative
-for Raycast Store requirements.
+The Homebrew formula copies the tracked `bundle/AppIcon.icns` into the app bundle. It does **not** run `iconutil` inside Homebrew's build sandbox; that was fixed in v0.1.1.
+
+Maintainers can regenerate the asset from `bundle/AppIcon-1024.png` with `scripts/generate_icns.sh` outside the sandbox. The Raycast extension uses the separate 512×512 `raycast-extension/assets/command-icon.png` asset.
 
 ## License
 
