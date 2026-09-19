@@ -608,17 +608,23 @@ CURRENT_UIDGID="$($SW_USR_ID -u):$($SW_USR_ID -g)"
 $SW_USR_FIND "$OUT_DIR/Switcheroo.app" -exec "$SW_USR_CHOWN" "$CURRENT_UIDGID" {} + 2>/dev/null || true
 
 # Validate payload inputs are regular non-symlink files
-for f in com.mitchelljphayes.switcheroo.plist install-binary.sh uninstall.sh scripts/lib.sh config.toml README.md LICENSE; do
+for f in bundle/com.mitchelljphayes.switcheroo.plist install-binary.sh uninstall.sh scripts/lib.sh config.toml README.md LICENSE; do
   sw_assert_regular_file "${BUILD_ROOT}/${f}"
 done
 
 # Copy repo payload files into the OUT_DIR and normalize their ownership
 # so all tar entries have a consistent uid:gid regardless of which
 # filesystem BUILD_ROOT lives on. This avoids touching the working tree.
+# The plist template ships at the archive root (rendered by the
+# installers from the extracted archive layout), sourced from bundle/.
 PAYLOAD_STAGING="$OUT_DIR/.payload"
 $SW_BIN_MKDIR -p "$PAYLOAD_STAGING/scripts"
-for f in com.mitchelljphayes.switcheroo.plist install-binary.sh uninstall.sh scripts/lib.sh config.toml README.md LICENSE; do
-  $SW_BIN_CP "${BUILD_ROOT}/${f}" "$PAYLOAD_STAGING/${f}"
+for f in bundle/com.mitchelljphayes.switcheroo.plist install-binary.sh uninstall.sh scripts/lib.sh config.toml README.md LICENSE; do
+  if [ "${f}" = "bundle/com.mitchelljphayes.switcheroo.plist" ]; then
+    $SW_BIN_CP "${BUILD_ROOT}/${f}" "$PAYLOAD_STAGING/com.mitchelljphayes.switcheroo.plist"
+  else
+    $SW_BIN_CP "${BUILD_ROOT}/${f}" "$PAYLOAD_STAGING/${f}"
+  fi
 done
 # Normalize ownership and mtimes for deterministic tar headers
 $SW_USR_FIND "$PAYLOAD_STAGING" -exec "$SW_USR_CHOWN" "$CURRENT_UIDGID" {} + 2>/dev/null || true
@@ -690,6 +696,24 @@ fi
 EXTRACTED_PLIST_VER="$($SW_USR_PLUTIL -extract CFBundleShortVersionString raw -o - "$_VERIFY_DIR/Switcheroo.app/Contents/Info.plist" 2>/dev/null || printf '')"
 [ "$EXTRACTED_PLIST_VER" = "$VERSION" ] \
   || SW_ERR "extracted plist version '$EXTRACTED_PLIST_VER' != '$VERSION'"
+
+# Smoke-test that the archive-shipped installers can actually resolve the
+# plist template from the EXTRACTED archive layout (root-adjacent, no
+# bundle/ directory). Renders the template the same way install-binary.sh
+# does (inline render — package.sh doesn't source scripts/lib.sh) and
+# validates the result. Catches archive/repo path drift.
+if [ -f "$_VERIFY_DIR/com.mitchelljphayes.switcheroo.plist" ]; then
+  _SMOKE_PLIST="$($SW_USR_MKTEMP -t switcheroo.smoke.XXXXXX)"
+  $SW_USR_SED "s|__APP_DIR__|$_VERIFY_DIR/Switcheroo.app|g" \
+    "$_VERIFY_DIR/com.mitchelljphayes.switcheroo.plist" > "$_SMOKE_PLIST" \
+    || SW_ERR "archive installer smoke test: sed render failed"
+  $SW_USR_PLUTIL -lint "$_SMOKE_PLIST" >/dev/null \
+    || SW_ERR "archive installer smoke test: rendered plist fails plutil -lint"
+  $SW_USR_GREP -q "$_VERIFY_DIR/Switcheroo.app/Contents/MacOS/switcheroo" "$_SMOKE_PLIST" \
+    || SW_ERR "archive installer smoke test: __APP_DIR__ substitution missing in rendered plist"
+  $SW_BIN_RM -f "$_SMOKE_PLIST"
+  echo "    OK: archive installer resolves and renders plist template"
+fi
 
 $SW_BIN_RM -rf "$_VERIFY_DIR"
 _VERIFY_DIR=""

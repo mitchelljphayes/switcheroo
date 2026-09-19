@@ -18,7 +18,14 @@ APP_DIR="${REAL_HOME}/.local/bin/${APP_NAME}"
 APP_DIR_PARENT="${REAL_HOME}/.local/bin"
 CONFIG_DIR="${REAL_HOME}/.config/switcheroo"
 PLIST_NAME="com.mitchelljphayes.switcheroo"
-PLIST_SRC="${SCRIPT_DIR}/${PLIST_NAME}.plist"
+# The plist template ships at the archive root next to this script
+# (release archives flatten bundle/ into the archive root), so resolve
+# root-adjacent first; fall back to bundle/ for repo-checkout layouts.
+if [ -f "${SCRIPT_DIR}/${PLIST_NAME}.plist" ]; then
+  PLIST_SRC="${SCRIPT_DIR}/${PLIST_NAME}.plist"
+else
+  PLIST_SRC="${SCRIPT_DIR}/bundle/${PLIST_NAME}.plist"
+fi
 PLIST_DST="${REAL_HOME}/Library/LaunchAgents/${PLIST_NAME}.plist"
 PLIST_DST_DIR="${REAL_HOME}/Library/LaunchAgents"
 STAGED_APP_SRC="${SCRIPT_DIR}/${APP_NAME}"
