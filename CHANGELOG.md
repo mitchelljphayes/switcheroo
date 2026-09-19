@@ -5,6 +5,22 @@ All notable changes to Switcheroo are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Documentation
+
+- README: rewrote the install section as a Homebrew quick start that separates
+  install, config, Accessibility permission, service start, and the optional
+  Raycast UI; added Usage, Troubleshooting, Uninstall, and Upgrade sections;
+  clarified that `[[modifier_remap]]` mappings are reapplied at startup and
+  after wake and are cleaned up on normal shutdown; corrected the sample
+  config commentary (`; to =`, not a semicolon/colon swap).
+- raycast-extension/README: aligned the daemon setup with the new Homebrew
+  quick start, documented local installation from the submission fork branch
+  while the Raycast Store review is pending, added Troubleshooting and
+  Update-or-remove sections, and clarified that stopping the `npm run dev`
+  watcher does not stop the remapping daemon.
+
 ## [0.1.1] - 2026-09-12
 
 ### Fixed
