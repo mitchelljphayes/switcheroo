@@ -83,7 +83,7 @@ fi
 
 # ── B7: plist rendering uses /usr/bin/sed + plutil validation ────────
 TMPRENDER="$("${SW_USR_MKTEMP}" -d)"
-RENDERED="$(sw_render_plist "${SCRIPT_DIR}/../com.mitchelljphayes.switcheroo.plist" "/test/app/dir" "$TMPRENDER")"
+RENDERED="$(sw_render_plist "${SCRIPT_DIR}/../bundle/com.mitchelljphayes.switcheroo.plist" "/test/app/dir" "$TMPRENDER")"
 if "${SW_USR_PLUTIL}" -lint "$RENDERED" >/dev/null 2>&1; then
   ok "sw_render_plist produces valid plist"
 else
